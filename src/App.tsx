@@ -9,8 +9,6 @@ import {
   XCircle, BookOpen, Award, User, Settings,
   List, LayoutGrid, Book, MessageSquare, Leaf, Zap, Flame
 } from 'lucide-react';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
 
 // --- Global Data untuk Distractor (Pilihan Salah) ---
 const ALL_SURAHS = [
@@ -80,6 +78,7 @@ export default function App() {
   // Khusus untuk Game 2 (Susun Kata)
   const [scrambledWords, setScrambledWords] = useState<any[]>([]);
   const [arrangedWords, setArrangedWords] = useState<any[]>([]);
+  const [showAlhamdulillah, setShowAlhamdulillah] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -262,93 +261,6 @@ export default function App() {
       setIsPlayingAudio(false);
     } else {
       setStep('result');
-    }
-  };
-
-  const downloadPNG = () => {
-    const card = document.getElementById('result-card');
-    if (card) {
-      html2canvas(card, { 
-        scale: 2, 
-        useCORS: true,
-        backgroundColor: '#ffffff', 
-        logging: false,
-        imageTimeout: 15000,
-        onclone: (clonedDoc) => {
-          // Memastikan font dimuat di dokumen kloning
-          const style = clonedDoc.createElement('style');
-          style.innerHTML = `
-            @import url('https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Nunito:wght@400;600;700;800;900&display=swap');
-            .font-arabic { font-family: 'Amiri Quran', serif !important; }
-            body { font-family: 'Nunito', sans-serif !important; }
-          `;
-          clonedDoc.head.appendChild(style);
-        }
-      }).then((canvas: HTMLCanvasElement) => {
-        const link = document.createElement('a');
-        link.download = `Sertifikat-Tahfidz-${studentName.replace(/\s+/g, '-') || 'Hasil'}.png`;
-        link.href = canvas.toDataURL('image/png', 1.0);
-        link.click();
-      }).catch((err: any) => {
-        console.error("Gagal menyimpan PNG:", err);
-        alert("Gagal menyimpan gambar. Silakan coba lagi.");
-      });
-    }
-  };
-
-  const shareToWhatsApp = () => {
-    const card = document.getElementById('result-card');
-    if (card) {
-      html2canvas(card, { 
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-        imageTimeout: 15000,
-        onclone: (clonedDoc) => {
-          const style = clonedDoc.createElement('style');
-          style.innerHTML = `
-            @import url('https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Nunito:wght@400;600;700;800;900&display=swap');
-            .font-arabic { font-family: 'Amiri Quran', serif !important; }
-            body { font-family: 'Nunito', sans-serif !important; }
-          `;
-          clonedDoc.head.appendChild(style);
-        }
-      }).then(async (canvas: HTMLCanvasElement) => {
-        const finalScore = Math.round((score / questions.length) * 100);
-        const text = `Alhamdulillah! ${studentName} (Kelas ${studentClass}) telah menyelesaikan Ujian Tahfidz Juz ${selectedJuz} dengan Skor: ${finalScore}. \n\nCek hafalanmu di: ${window.location.href}`;
-        
-        // Cek apakah browser mendukung sharing file
-        if (navigator.share && navigator.canShare) {
-          try {
-            const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
-            if (!blob) throw new Error("Gagal membuat gambar");
-            
-            const file = new File([blob], `Sertifikat-${studentName}.png`, { type: 'image/png' });
-            
-            if (navigator.canShare({ files: [file] })) {
-              await navigator.share({
-                files: [file],
-                title: 'Sertifikat Tahfidz',
-                text: text,
-              });
-            } else {
-              // Fallback jika tidak bisa share file
-              window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-            }
-          } catch (err) {
-            console.error("Gagal berbagi:", err);
-            // Fallback ke text share
-            window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-          }
-        } else {
-          // Fallback untuk browser yang tidak mendukung Web Share API
-          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-        }
-      }).catch((err: any) => {
-        console.error("Gagal memproses gambar:", err);
-        alert("Gagal menyiapkan gambar untuk dibagikan.");
-      });
     }
   };
 
@@ -758,80 +670,84 @@ export default function App() {
     };
     
     return (
-      <div className="max-w-xl mx-auto space-y-6">
+      <div className="max-w-md mx-auto space-y-4">
         {/* Sertifikat Container */}
         <div id="result-card" className="bg-white rounded-[2rem] overflow-hidden border border-slate-100 shadow-2xl relative">
           
           {/* Header Sertifikat - Navy & Gold */}
-          <div className="bg-gradient-to-br from-blue-950 via-blue-900 to-slate-900 text-center py-12 px-8 text-white relative border-b-[6px] border-amber-500">
+          <div className="bg-gradient-to-br from-blue-950 via-blue-900 to-slate-900 text-center py-8 px-6 text-white relative border-b-[6px] border-amber-500">
             <div className="absolute inset-0 opacity-10 bg-slate-900 mix-blend-overlay" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.15) 1px, transparent 0)', backgroundSize: '24px 24px' }}></div>
-            <Award className="w-20 h-20 mx-auto mb-6 text-amber-400 relative z-10 drop-shadow-md" />
-            <h1 className="text-4xl font-black tracking-widest relative z-10 drop-shadow-sm text-white">RAPOR TAHFIDZ</h1>
-            <p className="text-amber-200 mt-3 relative z-10 font-bold tracking-widest uppercase text-sm bg-blue-950/50 border border-amber-400/30 inline-block px-4 py-1.5 rounded-full shadow-sm">
-              PADA: {gameTypeLabels[gameType]} • Level: {difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
+            <Award className="w-14 h-14 mx-auto mb-4 text-amber-400 relative z-10 drop-shadow-md" />
+            <h1 className="text-2xl font-black tracking-widest relative z-10 drop-shadow-sm text-white uppercase">Rapor Tahfidz</h1>
+            <p className="text-amber-200 mt-2 relative z-10 font-bold tracking-widest uppercase text-[10px] bg-blue-950/50 border border-amber-400/30 inline-block px-3 py-1 rounded-full shadow-sm">
+              {gameTypeLabels[gameType]} • Level: {difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
             </p>
           </div>
 
-          <div className="p-8 sm:p-12 bg-slate-50/50">
-            <div className="text-center mb-10">
-              <div className={`text-8xl font-black mb-2 drop-shadow-sm ${finalScore >= 80 ? 'text-amber-500' : finalScore >= 50 ? 'text-blue-500' : 'text-rose-500'}`}>
+          <div className="p-6 sm:p-8 bg-slate-50/50">
+            <div className="text-center mb-6">
+              <div className={`text-6xl font-black mb-1 drop-shadow-sm ${finalScore >= 80 ? 'text-amber-500' : finalScore >= 50 ? 'text-blue-500' : 'text-rose-500'}`}>
                 {finalScore}
               </div>
-              <div className="text-sm font-bold text-slate-400 uppercase tracking-widest">Skor Akhir</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Skor Akhir</div>
             </div>
 
-            <div className="space-y-4 bg-white p-6 sm:p-8 rounded-[1.5rem] border border-slate-100 shadow-sm">
-              <div className="flex justify-between items-end border-b-2 border-dashed border-slate-100 pb-3">
-                <span className="text-slate-400 text-sm font-bold uppercase tracking-wider">Nama</span>
-                <span className="font-black text-slate-800 text-lg">{studentName}</span>
+            <div className="space-y-3 bg-white p-4 sm:p-6 rounded-[1.5rem] border border-slate-100 shadow-sm">
+              <div className="flex justify-between items-end border-b border-dashed border-slate-100 pb-2">
+                <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Nama</span>
+                <span className="font-black text-slate-800 text-base">{studentName}</span>
               </div>
-              <div className="flex justify-between items-end border-b-2 border-dashed border-slate-100 pb-3">
-                <span className="text-slate-400 text-sm font-bold uppercase tracking-wider">Kelas</span>
-                <span className="font-black text-slate-800 text-lg">{studentClass}</span>
+              <div className="flex justify-between items-end border-b border-dashed border-slate-100 pb-2">
+                <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Kelas</span>
+                <span className="font-black text-slate-800 text-base">{studentClass}</span>
               </div>
-              <div className="flex justify-between items-end border-b-2 border-dashed border-slate-100 pb-3">
-                <span className="text-slate-400 text-sm font-bold uppercase tracking-wider">Hafalan</span>
-                <span className="font-black text-slate-800 text-right max-w-[60%] leading-tight">
-                  Juz {selectedJuz} <br/><span className="text-sm text-blue-800">{selectedSurah !== "all" ? `Surat ke-${selectedSurah}` : 'Semua Surat'}</span>
+              <div className="flex justify-between items-end border-b border-dashed border-slate-100 pb-2">
+                <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Hafalan</span>
+                <span className="font-black text-slate-800 text-right max-w-[60%] leading-tight text-sm">
+                  Juz {selectedJuz} <br/><span className="text-[10px] text-blue-800">{selectedSurah !== "all" ? `Surat ke-${selectedSurah}` : 'Semua Surat'}</span>
                 </span>
               </div>
-              <div className="flex justify-between items-end pt-2">
-                <span className="text-slate-400 text-sm font-bold uppercase tracking-wider">Jawaban Benar</span>
-                <span className="font-black text-amber-500 text-xl">{score} <span className="text-sm text-slate-400">dari {questions.length}</span></span>
+              <div className="flex justify-between items-end pt-1">
+                <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Jawaban Benar</span>
+                <span className="font-black text-amber-500 text-lg">{score} <span className="text-[10px] text-slate-400">dari {questions.length}</span></span>
               </div>
             </div>
 
-            <div className="mt-10 text-center">
-              <p className="text-base text-slate-600 font-medium leading-relaxed px-4">
+            <div className="mt-6 text-center">
+              <p className="text-sm text-slate-600 font-medium leading-relaxed px-2">
                 {finalScore >= 80 ? '🎉 Masya Allah! Hafalanmu sangat kuat. Terus pertahankan prestasimu!' : 
                  finalScore >= 50 ? '👍 Bagus! Sedikit lagi murajaah pasti bisa dapat nilai sempurna.' :
                  '💪 Tetap semangat! Terus perbanyak murajaah agar hafalan semakin lancar.'}
               </p>
             </div>
+
+            {/* Screenshot Instruction / Alhamdulillah Message */}
+            <div className="mt-4 pb-4 text-center px-4">
+              <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-3 relative group">
+                <p className={`transition-all duration-300 ${showAlhamdulillah ? 'text-blue-900 font-black text-base italic' : 'text-slate-500 text-[10px] font-medium italic'}`}>
+                  {showAlhamdulillah 
+                    ? "Alhamdulillah, saya telah menyelesaikan ujian tahfidz" 
+                    : "*screenshot hasil kamu sebagai bukti kamu sudah menyelesaikan ujian tahfidz*"}
+                </p>
+                <button 
+                  onClick={() => setShowAlhamdulillah(!showAlhamdulillah)}
+                  className="mt-2 text-[9px] font-bold uppercase tracking-tighter text-blue-600 hover:text-blue-800 underline decoration-dotted underline-offset-4"
+                >
+                  {showAlhamdulillah ? "Tampilkan Instruksi" : "Sembunyikan Instruksi"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col gap-4 mt-8">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <button 
-              onClick={downloadPNG}
-              className="flex-1 bg-gradient-to-r from-blue-900 to-blue-800 text-white py-4 rounded-2xl font-black shadow-lg shadow-blue-900/20 transition-all flex items-center justify-center gap-3 text-lg border-b-4 border-blue-950 active:border-b-0 active:translate-y-1"
-            >
-              <Download className="w-6 h-6" /> Simpan PNG
-            </button>
-            
-            <button 
-              onClick={shareToWhatsApp}
-              className="flex-1 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white py-4 rounded-2xl font-black shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-3 text-lg border-b-4 border-emerald-700 active:border-b-0 active:translate-y-1"
-            >
-              <MessageSquare className="w-6 h-6" /> Bagikan WA
-            </button>
-          </div>
-
+        <div className="flex flex-col gap-4 mt-4">
           <button 
-            onClick={() => setStep('setup')}
-            className="w-full bg-white border-2 border-slate-200 text-blue-900 py-4 rounded-2xl font-black hover:bg-slate-50 hover:border-blue-400 transition-colors flex items-center justify-center gap-3 text-lg"
+            onClick={() => {
+              setStep('setup');
+              setShowAlhamdulillah(false);
+            }}
+            className="w-full bg-blue-900 text-white py-4 rounded-2xl font-black hover:bg-blue-800 transition-all shadow-lg shadow-blue-900/20 flex items-center justify-center gap-3 text-lg border-b-4 border-blue-950 active:border-b-0 active:translate-y-1"
           >
             <RefreshCcw className="w-6 h-6" /> Main Lagi
           </button>
