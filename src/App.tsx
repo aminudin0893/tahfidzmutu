@@ -9,6 +9,8 @@ import {
   XCircle, BookOpen, Award, User, Settings,
   List, LayoutGrid, Book, MessageSquare, Leaf, Zap, Flame
 } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 // --- Global Data untuk Distractor (Pilihan Salah) ---
 const ALL_SURAHS = [
@@ -82,23 +84,6 @@ export default function App() {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   // --- Effects ---
-  useEffect(() => {
-    const scriptH2C = document.createElement('script');
-    scriptH2C.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
-    scriptH2C.async = true;
-    document.body.appendChild(scriptH2C);
-
-    const scriptPDF = document.createElement('script');
-    scriptPDF.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-    scriptPDF.async = true;
-    document.body.appendChild(scriptPDF);
-
-    return () => { 
-      document.body.removeChild(scriptH2C); 
-      document.body.removeChild(scriptPDF);
-    }
-  }, []);
-
   useEffect(() => {
     setIsFetching(true);
     Promise.all([
@@ -281,20 +266,24 @@ export default function App() {
   };
 
   const downloadPNG = () => {
-    if (!(window as any).html2canvas) {
-      alert("Sedang menyiapkan pengunduh, silakan coba lagi dalam beberapa detik.");
-      return;
-    }
     const card = document.getElementById('result-card');
     if (card) {
-      // Pastikan font sudah ter-render
-      (window as any).html2canvas(card, { 
-        scale: 3, // Skala lebih tinggi untuk kualitas lebih tajam
+      html2canvas(card, { 
+        scale: 2, 
         useCORS: true,
-        backgroundColor: '#ffffff', // Gunakan putih solid untuk PNG agar konsisten
+        backgroundColor: '#ffffff', 
         logging: false,
-        allowTaint: true,
-        imageTimeout: 15000
+        imageTimeout: 15000,
+        onclone: (clonedDoc) => {
+          // Memastikan font dimuat di dokumen kloning
+          const style = clonedDoc.createElement('style');
+          style.innerHTML = `
+            @import url('https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Nunito:wght@400;600;700;800;900&display=swap');
+            .font-arabic { font-family: 'Amiri Quran', serif !important; }
+            body { font-family: 'Nunito', sans-serif !important; }
+          `;
+          clonedDoc.head.appendChild(style);
+        }
       }).then((canvas: HTMLCanvasElement) => {
         const link = document.createElement('a');
         link.download = `Sertifikat-Tahfidz-${studentName.replace(/\s+/g, '-') || 'Hasil'}.png`;
@@ -307,33 +296,58 @@ export default function App() {
     }
   };
 
-  const downloadPDF = () => {
-    if (!(window as any).html2canvas || !(window as any).jspdf) {
-      alert("Sedang menyiapkan pengunduh PDF, silakan coba lagi dalam beberapa detik.");
-      return;
-    }
+  const shareToWhatsApp = () => {
     const card = document.getElementById('result-card');
     if (card) {
-      (window as any).html2canvas(card, { 
+      html2canvas(card, { 
         scale: 2,
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false,
-        allowTaint: true
-      }).then((canvas: HTMLCanvasElement) => {
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        const { jsPDF } = (window as any).jspdf;
+        imageTimeout: 15000,
+        onclone: (clonedDoc) => {
+          const style = clonedDoc.createElement('style');
+          style.innerHTML = `
+            @import url('https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Nunito:wght@400;600;700;800;900&display=swap');
+            .font-arabic { font-family: 'Amiri Quran', serif !important; }
+            body { font-family: 'Nunito', sans-serif !important; }
+          `;
+          clonedDoc.head.appendChild(style);
+        }
+      }).then(async (canvas: HTMLCanvasElement) => {
+        const finalScore = Math.round((score / questions.length) * 100);
+        const text = `Alhamdulillah! ${studentName} (Kelas ${studentClass}) telah menyelesaikan Ujian Tahfidz Juz ${selectedJuz} dengan Skor: ${finalScore}. \n\nCek hafalanmu di: ${window.location.href}`;
         
-        // Hitung dimensi dalam mm (A4 standard approx 210x297)
-        const imgWidth = 210; 
-        const pageHeight = (canvas.height * imgWidth) / canvas.width;
-        
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, pageHeight);
-        pdf.save(`Sertifikat-Tahfidz-${studentName.replace(/\s+/g, '-') || 'Hasil'}.pdf`);
+        // Cek apakah browser mendukung sharing file
+        if (navigator.share && navigator.canShare) {
+          try {
+            const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+            if (!blob) throw new Error("Gagal membuat gambar");
+            
+            const file = new File([blob], `Sertifikat-${studentName}.png`, { type: 'image/png' });
+            
+            if (navigator.canShare({ files: [file] })) {
+              await navigator.share({
+                files: [file],
+                title: 'Sertifikat Tahfidz',
+                text: text,
+              });
+            } else {
+              // Fallback jika tidak bisa share file
+              window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+            }
+          } catch (err) {
+            console.error("Gagal berbagi:", err);
+            // Fallback ke text share
+            window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+          }
+        } else {
+          // Fallback untuk browser yang tidak mendukung Web Share API
+          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+        }
       }).catch((err: any) => {
-        console.error("Gagal menyimpan PDF:", err);
-        alert("Gagal menyimpan PDF. Silakan coba lagi.");
+        console.error("Gagal memproses gambar:", err);
+        alert("Gagal menyiapkan gambar untuk dibagikan.");
       });
     }
   };
@@ -808,10 +822,10 @@ export default function App() {
             </button>
             
             <button 
-              onClick={downloadPDF}
-              className="flex-1 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-blue-950 py-4 rounded-2xl font-black shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-3 text-lg border-b-4 border-amber-600 active:border-b-0 active:translate-y-1"
+              onClick={shareToWhatsApp}
+              className="flex-1 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white py-4 rounded-2xl font-black shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-3 text-lg border-b-4 border-emerald-700 active:border-b-0 active:translate-y-1"
             >
-              <BookOpen className="w-6 h-6" /> Simpan PDF
+              <MessageSquare className="w-6 h-6" /> Bagikan WA
             </button>
           </div>
 
@@ -836,9 +850,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4 sm:px-6 font-sans selection:bg-amber-200 selection:text-blue-950">
       <style>{`
-        /* Menggunakan font Amiri Quran yang didesain khusus agar harakat dan spasi Al-Quran sangat jelas */
-        @import url('https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Nunito:wght@400;600;700;800;900&display=swap');
-        
         .font-arabic { 
           font-family: 'Amiri Quran', serif; 
           /* Memperlebar jarak antar baris agar harakat tidak berdempetan */
