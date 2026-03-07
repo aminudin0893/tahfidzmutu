@@ -224,11 +224,25 @@ export default function App() {
     setStep('playing');
   };
 
+  const normalizeArabic = (text: string) => {
+    if (!text) return "";
+    return text
+      .trim()
+      .replace(/\s{2,}/g, ' ')
+      // Menghapus Basmalah di awal ayat jika ada (kecuali Al-Fatihah)
+      // Beberapa API menyertakan Basmalah di awal ayat pertama setiap surat
+      .replace(/^بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\s*/, '')
+      .replace(/^بِسْمِ اللهِ الرَّحْمٰنِ الرَّحِيْمِ\s*/, '');
+  };
+
   const handleAnswerMultipleChoice = (selectedAnswer: string) => {
     if (feedback) return; 
     
     const currentQ = questions[currentIndex];
-    if (selectedAnswer === currentQ.answerText) {
+    const normalizedSelected = normalizeArabic(selectedAnswer);
+    const normalizedCorrect = normalizeArabic(currentQ.answerText);
+
+    if (normalizedSelected === normalizedCorrect) {
       playDing();
       setFeedback('correct');
       setScore(prev => prev + 1);
@@ -243,7 +257,10 @@ export default function App() {
     const userAnswer = arrangedWords.map(w => w.text).join(' ');
     const currentQ = questions[currentIndex];
     
-    if (userAnswer === currentQ.answerText.trim().replace(/\s{2,}/g, ' ')) {
+    const normalizedUser = normalizeArabic(userAnswer);
+    const normalizedCorrect = normalizeArabic(currentQ.answerText);
+
+    if (normalizedUser === normalizedCorrect) {
       playDing();
       setFeedback('correct');
       setScore(prev => prev + 1);
@@ -270,16 +287,22 @@ export default function App() {
     }
     const card = document.getElementById('result-card');
     if (card) {
+      // Pastikan font sudah ter-render
       (window as any).html2canvas(card, { 
-        scale: 2,
+        scale: 3, // Skala lebih tinggi untuk kualitas lebih tajam
         useCORS: true,
-        backgroundColor: null,
-        logging: false
+        backgroundColor: '#ffffff', // Gunakan putih solid untuk PNG agar konsisten
+        logging: false,
+        allowTaint: true,
+        imageTimeout: 15000
       }).then((canvas: HTMLCanvasElement) => {
         const link = document.createElement('a');
         link.download = `Sertifikat-Tahfidz-${studentName.replace(/\s+/g, '-') || 'Hasil'}.png`;
-        link.href = canvas.toDataURL('image/png');
+        link.href = canvas.toDataURL('image/png', 1.0);
         link.click();
+      }).catch((err: any) => {
+        console.error("Gagal menyimpan PNG:", err);
+        alert("Gagal menyimpan gambar. Silakan coba lagi.");
       });
     }
   };
@@ -295,17 +318,22 @@ export default function App() {
         scale: 2,
         useCORS: true,
         backgroundColor: '#ffffff',
-        logging: false
+        logging: false,
+        allowTaint: true
       }).then((canvas: HTMLCanvasElement) => {
-        const imgData = canvas.toDataURL('image/png');
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
         const { jsPDF } = (window as any).jspdf;
-        const pdf = new jsPDF({
-          orientation: 'portrait',
-          unit: 'px',
-          format: [canvas.width / 2, canvas.height / 2]
-        });
-        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width / 2, canvas.height / 2);
+        
+        // Hitung dimensi dalam mm (A4 standard approx 210x297)
+        const imgWidth = 210; 
+        const pageHeight = (canvas.height * imgWidth) / canvas.width;
+        
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, pageHeight);
         pdf.save(`Sertifikat-Tahfidz-${studentName.replace(/\s+/g, '-') || 'Hasil'}.pdf`);
+      }).catch((err: any) => {
+        console.error("Gagal menyimpan PDF:", err);
+        alert("Gagal menyimpan PDF. Silakan coba lagi.");
       });
     }
   };
@@ -326,7 +354,7 @@ export default function App() {
           PROGRAM UNGGULAN<span className="text-amber-400"> TAHFIDZ</span>
         </h1>
         <p className="text-blue-100 mt-3 text-sm sm:text-base font-medium relative z-10 max-w-md mx-auto">
-          Platform interaktif modern untuk menguji dan memperkuat hafalan Al-Qur'an Kamu.
+          Platform interaktif modern SMP Muhammadiyah 1 Probolinggo untuk menguji dan memperkuat hafalan Al-Qur'an Kamu.
         </p>
       </div>
 
@@ -722,7 +750,7 @@ export default function App() {
           
           {/* Header Sertifikat - Navy & Gold */}
           <div className="bg-gradient-to-br from-blue-950 via-blue-900 to-slate-900 text-center py-12 px-8 text-white relative border-b-[6px] border-amber-500">
-            <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] mix-blend-overlay"></div>
+            <div className="absolute inset-0 opacity-10 bg-slate-900 mix-blend-overlay" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.15) 1px, transparent 0)', backgroundSize: '24px 24px' }}></div>
             <Award className="w-20 h-20 mx-auto mb-6 text-amber-400 relative z-10 drop-shadow-md" />
             <h1 className="text-4xl font-black tracking-widest relative z-10 drop-shadow-sm text-white">RAPOR TAHFIDZ</h1>
             <p className="text-amber-200 mt-3 relative z-10 font-bold tracking-widest uppercase text-sm bg-blue-950/50 border border-amber-400/30 inline-block px-4 py-1.5 rounded-full shadow-sm">
