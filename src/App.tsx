@@ -733,7 +733,7 @@ export default function App() {
                   onClick={() => setShowAlhamdulillah(!showAlhamdulillah)}
                   className="mt-2 text-[9px] font-bold uppercase tracking-tighter text-blue-600 hover:text-blue-800 underline decoration-dotted underline-offset-4"
                 >
-                  {showAlhamdulillah ? "Tampilkan Instruksi" : "Sembunyikan Instruksi"}
+                  {showAlhamdulillah ? "HIDUP MULIA BERSAMA AL-QUR'AN" : "Sembunyikan Instruksi"}
                 </button>
               </div>
             </div>
