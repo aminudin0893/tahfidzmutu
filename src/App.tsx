@@ -83,11 +83,20 @@ export default function App() {
 
   // --- Effects ---
   useEffect(() => {
-    const script = document.createElement('script');
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
-    script.async = true;
-    document.body.appendChild(script);
-    return () => { document.body.removeChild(script); }
+    const scriptH2C = document.createElement('script');
+    scriptH2C.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+    scriptH2C.async = true;
+    document.body.appendChild(scriptH2C);
+
+    const scriptPDF = document.createElement('script');
+    scriptPDF.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    scriptPDF.async = true;
+    document.body.appendChild(scriptPDF);
+
+    return () => { 
+      document.body.removeChild(scriptH2C); 
+      document.body.removeChild(scriptPDF);
+    }
   }, []);
 
   useEffect(() => {
@@ -254,14 +263,49 @@ export default function App() {
     }
   };
 
-  const downloadResult = () => {
+  const downloadPNG = () => {
+    if (!(window as any).html2canvas) {
+      alert("Sedang menyiapkan pengunduh, silakan coba lagi dalam beberapa detik.");
+      return;
+    }
     const card = document.getElementById('result-card');
-    if ((window as any).html2canvas && card) {
-      (window as any).html2canvas(card, { scale: 2 }).then((canvas: HTMLCanvasElement) => {
+    if (card) {
+      (window as any).html2canvas(card, { 
+        scale: 2,
+        useCORS: true,
+        backgroundColor: null,
+        logging: false
+      }).then((canvas: HTMLCanvasElement) => {
         const link = document.createElement('a');
-        link.download = `Sertifikat-Tahfidz-${studentName.replace(/\s+/g, '-')}.png`;
+        link.download = `Sertifikat-Tahfidz-${studentName.replace(/\s+/g, '-') || 'Hasil'}.png`;
         link.href = canvas.toDataURL('image/png');
         link.click();
+      });
+    }
+  };
+
+  const downloadPDF = () => {
+    if (!(window as any).html2canvas || !(window as any).jspdf) {
+      alert("Sedang menyiapkan pengunduh PDF, silakan coba lagi dalam beberapa detik.");
+      return;
+    }
+    const card = document.getElementById('result-card');
+    if (card) {
+      (window as any).html2canvas(card, { 
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false
+      }).then((canvas: HTMLCanvasElement) => {
+        const imgData = canvas.toDataURL('image/png');
+        const { jsPDF } = (window as any).jspdf;
+        const pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'px',
+          format: [canvas.width / 2, canvas.height / 2]
+        });
+        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width / 2, canvas.height / 2);
+        pdf.save(`Sertifikat-Tahfidz-${studentName.replace(/\s+/g, '-') || 'Hasil'}.pdf`);
       });
     }
   };
@@ -279,10 +323,10 @@ export default function App() {
         
         <BookOpen className="w-16 h-16 mx-auto mb-4 drop-shadow-md text-amber-400 relative z-10" />
         <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight relative z-10 drop-shadow-sm">
-          Tahfidz<span className="text-amber-400">Pro</span>
+          PROGRAM UNGGULAN<span className="text-amber-400"> TAHFIDZ</span>
         </h1>
         <p className="text-blue-100 mt-3 text-sm sm:text-base font-medium relative z-10 max-w-md mx-auto">
-          Platform interaktif modern untuk menguji dan memperkuat hafalan Al-Qur'an Anda.
+          Platform interaktif modern untuk menguji dan memperkuat hafalan Al-Qur'an Kamu.
         </p>
       </div>
 
@@ -312,7 +356,7 @@ export default function App() {
                 type="text" required 
                 value={studentClass} onChange={e => setStudentClass(e.target.value)}
                 className="block w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-slate-800 placeholder-slate-400 focus:bg-white focus:border-amber-400 focus:ring-0 transition-all outline-none font-bold" 
-                placeholder="Kelas / Grup"
+                placeholder="Kelas"
               />
             </div>
           </div>
@@ -682,7 +726,7 @@ export default function App() {
             <Award className="w-20 h-20 mx-auto mb-6 text-amber-400 relative z-10 drop-shadow-md" />
             <h1 className="text-4xl font-black tracking-widest relative z-10 drop-shadow-sm text-white">RAPOR TAHFIDZ</h1>
             <p className="text-amber-200 mt-3 relative z-10 font-bold tracking-widest uppercase text-sm bg-blue-950/50 border border-amber-400/30 inline-block px-4 py-1.5 rounded-full shadow-sm">
-              Mode: {gameTypeLabels[gameType]} • Level: {difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
+              PADA: {gameTypeLabels[gameType]} • Level: {difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
             </p>
           </div>
 
@@ -696,7 +740,7 @@ export default function App() {
 
             <div className="space-y-4 bg-white p-6 sm:p-8 rounded-[1.5rem] border border-slate-100 shadow-sm">
               <div className="flex justify-between items-end border-b-2 border-dashed border-slate-100 pb-3">
-                <span className="text-slate-400 text-sm font-bold uppercase tracking-wider">Nama Pemain</span>
+                <span className="text-slate-400 text-sm font-bold uppercase tracking-wider">Nama</span>
                 <span className="font-black text-slate-800 text-lg">{studentName}</span>
               </div>
               <div className="flex justify-between items-end border-b-2 border-dashed border-slate-100 pb-3">
@@ -704,7 +748,7 @@ export default function App() {
                 <span className="font-black text-slate-800 text-lg">{studentClass}</span>
               </div>
               <div className="flex justify-between items-end border-b-2 border-dashed border-slate-100 pb-3">
-                <span className="text-slate-400 text-sm font-bold uppercase tracking-wider">Target</span>
+                <span className="text-slate-400 text-sm font-bold uppercase tracking-wider">Hafalan</span>
                 <span className="font-black text-slate-800 text-right max-w-[60%] leading-tight">
                   Juz {selectedJuz} <br/><span className="text-sm text-blue-800">{selectedSurah !== "all" ? `Surat ke-${selectedSurah}` : 'Semua Surat'}</span>
                 </span>
@@ -726,19 +770,28 @@ export default function App() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row gap-4 mt-8">
+        <div className="flex flex-col gap-4 mt-8">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <button 
+              onClick={downloadPNG}
+              className="flex-1 bg-gradient-to-r from-blue-900 to-blue-800 text-white py-4 rounded-2xl font-black shadow-lg shadow-blue-900/20 transition-all flex items-center justify-center gap-3 text-lg border-b-4 border-blue-950 active:border-b-0 active:translate-y-1"
+            >
+              <Download className="w-6 h-6" /> Simpan PNG
+            </button>
+            
+            <button 
+              onClick={downloadPDF}
+              className="flex-1 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-blue-950 py-4 rounded-2xl font-black shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-3 text-lg border-b-4 border-amber-600 active:border-b-0 active:translate-y-1"
+            >
+              <BookOpen className="w-6 h-6" /> Simpan PDF
+            </button>
+          </div>
+
           <button 
             onClick={() => setStep('setup')}
-            className="flex-1 bg-white border-2 border-slate-200 text-blue-900 py-4 rounded-2xl font-black hover:bg-slate-50 hover:border-blue-400 transition-colors flex items-center justify-center gap-3 text-lg"
+            className="w-full bg-white border-2 border-slate-200 text-blue-900 py-4 rounded-2xl font-black hover:bg-slate-50 hover:border-blue-400 transition-colors flex items-center justify-center gap-3 text-lg"
           >
             <RefreshCcw className="w-6 h-6" /> Main Lagi
-          </button>
-          
-          <button 
-            onClick={downloadResult}
-            className="flex-1 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-blue-950 py-4 rounded-2xl font-black shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-3 text-lg border-b-4 border-amber-600 active:border-b-0 active:translate-y-1"
-          >
-            <Download className="w-6 h-6" /> Simpan Sertifikat
           </button>
         </div>
       </div>
@@ -770,6 +823,12 @@ export default function App() {
       {step === 'setup' && renderSetup()}
       {step === 'playing' && renderPlaying()}
       {step === 'result' && renderResult()}
+
+      <footer className="mt-12 pb-4 text-center">
+        <p className="text-slate-400 text-xs sm:text-sm font-black uppercase tracking-widest">
+          dibuat oleh: <span className="text-blue-900">Aminudin.S.Pd.</span>
+        </p>
+      </footer>
     </div>
   );
 }
