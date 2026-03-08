@@ -988,18 +988,26 @@ export default function App() {
                      </div>
                   )}
                 </div>
-                <button 
-                  onClick={handleNext}
-                  className={`mt-4 sm:mt-0 w-full sm:w-auto px-8 py-4 rounded-2xl font-black transition-all border-b-4 active:border-b-0 active:translate-y-1 ${
-                    feedback === 'correct' 
-                      ? 'bg-blue-900 border-blue-950 hover:bg-blue-800 text-white' 
-                      : 'bg-rose-500 border-rose-600 hover:bg-rose-400 text-white'
-                  }`}
-                >
-                  {currentIndex < questions.length - 1 ? "Lanjut" : "Selesai"} 
-                </button>
               </div>
             </div>
+          )}
+
+          {/* STANDALONE NEXT BUTTON - Only appears after answering */}
+          {feedback && (
+            <button 
+              onClick={handleNext}
+              className={`w-full mt-6 py-5 rounded-2xl font-black transition-all border-b-4 active:border-b-0 active:translate-y-1 shadow-lg text-lg uppercase tracking-widest flex items-center justify-center gap-3 ${
+                feedback === 'correct' 
+                  ? 'bg-blue-900 border-blue-950 hover:bg-blue-800 text-white shadow-blue-900/20' 
+                  : 'bg-rose-500 border-rose-600 hover:bg-rose-400 text-white shadow-rose-500/20'
+              }`}
+            >
+              {currentIndex < questions.length - 1 ? (
+                <>Lanjut Ke Soal Berikutnya <RefreshCcw className="w-5 h-5" /></>
+              ) : (
+                <>Lihat Hasil Akhir <Award className="w-5 h-5" /></>
+              )} 
+            </button>
           )}
         </div>
       </div>
