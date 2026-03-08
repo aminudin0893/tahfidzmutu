@@ -96,6 +96,7 @@ export default function App() {
       const rec = new SpeechRecognition();
       rec.continuous = false;
       rec.interimResults = false;
+      rec.maxAlternatives = 3;
       rec.lang = 'ar-SA'; // Default to Arabic for Lanjut Ayat
       
       rec.onresult = (event: any) => {
@@ -406,6 +407,9 @@ export default function App() {
         <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-32 h-32 bg-blue-500 opacity-20 rounded-full blur-xl"></div>
         <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/arabesque.png')] mix-blend-overlay"></div>
         
+        <div className="flex justify-center mb-2">
+          <span className="bg-amber-400 text-blue-950 text-[10px] font-black px-3 py-1 rounded-full shadow-lg border border-amber-300 animate-bounce relative z-10 uppercase tracking-widest">PRO VERSION</span>
+        </div>
         <BookOpen className="w-16 h-16 mx-auto mb-4 drop-shadow-md text-amber-400 relative z-10" />
         <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight relative z-10 drop-shadow-sm">
           PROGRAM UNGGULAN<span className="text-amber-400"> TAHFIDZ</span>
@@ -593,9 +597,15 @@ export default function App() {
             <span className="text-slate-500 font-bold text-sm uppercase tracking-wider">
               Soal {currentIndex + 1} <span className="text-slate-400 font-medium">dari {questions.length}</span>
             </span>
-            <div className="flex items-center gap-2 bg-blue-50 text-blue-900 border border-blue-100 py-1.5 px-4 rounded-full text-sm font-black shadow-sm">
-              <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
-              Skor: {score}
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-1.5 bg-rose-50 text-rose-600 border border-rose-100 py-1.5 px-4 rounded-full text-sm font-black shadow-sm">
+                <Flame className="w-4 h-4 fill-rose-500" />
+                Streak: {score}
+              </div>
+              <div className="flex items-center gap-2 bg-blue-50 text-blue-900 border border-blue-100 py-1.5 px-4 rounded-full text-sm font-black shadow-sm">
+                <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
+                Skor: {score}
+              </div>
             </div>
           </div>
           <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
@@ -635,8 +645,8 @@ export default function App() {
             {/* Teks Arab Pancingan - Didesain agar sangat mudah dibaca */}
             <div className="mt-8 relative min-h-[100px] flex items-center justify-center">
               {difficulty === 'mudah' ? (
-                <div className="py-6 px-4 w-full bg-slate-50 rounded-3xl border border-slate-100">
-                  <p className="text-4xl sm:text-5xl text-center leading-[2.5] font-arabic text-slate-800 drop-shadow-sm" dir="rtl">
+                <div className="py-6 px-4 w-full bg-slate-50 rounded-3xl border border-slate-100 shadow-inner">
+                  <p className="text-3xl sm:text-4xl text-center leading-[2.5] font-arabic text-slate-800 drop-shadow-sm" dir="rtl">
                     {currentQ.prompt.text}
                   </p>
                 </div>
@@ -669,7 +679,7 @@ export default function App() {
                   
                   // Text Arab untuk Opsi Lanjut Ayat juga diperbesar agar jelas
                   const textClass = gameType === 'lanjut_ayat' 
-                    ? "font-arabic text-3xl sm:text-4xl leading-[2.2] text-right block text-slate-800 py-2" 
+                    ? "font-arabic text-2xl sm:text-3xl leading-[2.2] text-right block text-slate-800 py-2" 
                     : "text-base sm:text-lg text-slate-700 block font-bold";
                   
                   if (feedback) {
@@ -735,8 +745,11 @@ export default function App() {
                       setArrangedWords(prev => prev.filter(w => w.id !== word.id));
                       setScrambledWords(prev => [...prev, word]);
                     }}
-                    className={`px-5 py-3 ${gameType === 'susun_kata' ? 'bg-blue-900 border-blue-950 font-arabic text-3xl sm:text-4xl' : 'bg-amber-500 border-amber-600 font-bold text-lg'} hover:bg-rose-500 text-white border-b-4 hover:border-rose-600 active:border-b-0 active:translate-y-1 rounded-xl shadow-sm transition-all`}
+                    className={`relative px-5 py-3 ${gameType === 'susun_kata' ? 'bg-blue-900 border-blue-950 font-arabic text-2xl sm:text-3xl' : 'bg-amber-500 border-amber-600 font-bold text-lg'} hover:bg-rose-500 text-white border-b-4 hover:border-rose-600 active:border-b-0 active:translate-y-1 rounded-xl shadow-sm transition-all`}
                   >
+                    <span className="absolute -top-2 -right-2 w-5 h-5 bg-white text-blue-900 text-[10px] font-black rounded-full flex items-center justify-center border border-blue-200 shadow-sm z-10">
+                      {idx + 1}
+                    </span>
                     {word.text}
                   </button>
                 ))}
@@ -751,7 +764,7 @@ export default function App() {
                       setScrambledWords(prev => prev.filter(w => w.id !== word.id));
                       setArrangedWords(prev => [...prev, word]);
                     }}
-                    className={`px-5 py-3 bg-white border-2 border-b-4 border-slate-200 hover:border-amber-400 hover:text-blue-900 text-slate-800 active:border-b-2 active:translate-y-0.5 ${gameType === 'susun_kata' ? 'font-arabic text-3xl sm:text-4xl' : 'font-bold text-lg'} rounded-xl transition-all`}
+                    className={`px-5 py-3 bg-white border-2 border-b-4 border-slate-200 hover:border-amber-400 hover:text-blue-900 text-slate-800 active:border-b-2 active:translate-y-0.5 ${gameType === 'susun_kata' ? 'font-arabic text-2xl sm:text-3xl' : 'font-bold text-lg'} rounded-xl transition-all`}
                   >
                     {word.text}
                   </button>
@@ -775,17 +788,33 @@ export default function App() {
               <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Gunakan Suara untuk Melanjutkan Ayat</h3>
               
               <div className="flex flex-col items-center gap-6">
-                <button 
-                  disabled={feedback !== null || isListening}
-                  onClick={startListening}
-                  className={`w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl border-b-8 active:border-b-0 active:translate-y-2 ${
-                    isListening 
-                      ? 'bg-rose-500 border-rose-700 animate-pulse' 
-                      : 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 hover:from-emerald-400 hover:to-emerald-500'
-                  } text-white`}
-                >
-                  <Mic className={`w-12 h-12 ${isListening ? 'animate-bounce' : ''}`} />
-                </button>
+                <div className="relative">
+                  {isListening && (
+                    <div className="absolute inset-0 -m-4 flex items-center justify-center">
+                      <div className="w-full h-full rounded-full border-4 border-rose-500/30 animate-ping"></div>
+                      <div className="absolute inset-0 flex items-center justify-center gap-1">
+                        {[1, 2, 3, 4, 5].map((i) => (
+                          <div 
+                            key={i} 
+                            className="w-1 bg-rose-500 rounded-full animate-pulse" 
+                            style={{ height: `${20 + Math.random() * 40}%`, animationDelay: `${i * 0.1}s` }}
+                          ></div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <button 
+                    disabled={feedback !== null || isListening}
+                    onClick={startListening}
+                    className={`w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl border-b-8 active:border-b-0 active:translate-y-2 relative z-10 ${
+                      isListening 
+                        ? 'bg-rose-500 border-rose-700' 
+                        : 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 hover:from-emerald-400 hover:to-emerald-500'
+                    } text-white`}
+                  >
+                    <Mic className={`w-12 h-12 ${isListening ? 'animate-bounce' : ''}`} />
+                  </button>
+                </div>
                 
                 <div className="space-y-2">
                   <p className={`text-sm font-bold uppercase tracking-widest ${isListening ? 'text-rose-500' : 'text-slate-400'}`}>
@@ -803,9 +832,14 @@ export default function App() {
                   )}
 
                   {transcript && (
-                    <div className="mt-4 p-6 bg-slate-50 rounded-3xl border border-slate-200 w-full max-w-md mx-auto">
-                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Hasil Suara:</p>
-                      <p className="font-arabic text-3xl text-blue-900 leading-relaxed" dir="rtl">{transcript}</p>
+                    <div className="mt-4 p-6 bg-white rounded-3xl border-2 border-emerald-100 w-full max-w-md mx-auto shadow-lg animate-in fade-in slide-in-from-bottom-4 duration-500">
+                      <div className="flex items-center justify-between mb-3 border-b border-emerald-50 pb-2">
+                        <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Hasil Analisis Suara Pro</p>
+                        <div className="flex gap-0.5">
+                          {[1, 2, 3].map(i => <div key={i} className="w-1 h-1 bg-emerald-400 rounded-full animate-pulse" style={{ animationDelay: `${i * 0.2}s` }}></div>)}
+                        </div>
+                      </div>
+                      <p className="font-arabic text-2xl sm:text-3xl text-blue-900 leading-relaxed" dir="rtl">{transcript}</p>
                     </div>
                   )}
                 </div>
