@@ -271,11 +271,16 @@ export default function App() {
     
     // 1. Dasar: Hapus harakat/diakritik & spasi berlebih
     let normalized = text.trim().replace(/\s{2,}/g, ' ');
-    // Hapus semua harakat (Fatha, Damma, Kasra, Shadda, Sukun, Tanwin)
-    normalized = normalized.replace(/[\u064B-\u0652\u06D6-\u06ED\u0670\u0671\u0653\u0654\u0655]/g, '');
+    
+    // Hapus semua harakat & simbol Al-Quran (Waqf, Sajdah, dll)
+    // Kita ganti simbol-simbol ini dengan spasi agar tidak menempelkan kata
+    normalized = normalized.replace(/[\u0610-\u061A\u064B-\u065F\u0670\u0671\u06D6-\u06DC\u06DF-\u06E8\u06EA-\u06ED]/g, ' ');
     
     // 2. Hapus tanda baca & karakter non-huruf Arab (termasuk Tatweel)
-    normalized = normalized.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()؟ـ]/g, "");
+    normalized = normalized.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()؟ـ]/g, " ");
+    
+    // Bersihkan spasi ganda hasil penggantian simbol tadi
+    normalized = normalized.replace(/\s{2,}/g, ' ');
     
     // 3. Normalisasi Karakter (Alif, Ya, Ta Marbuta, Waw, Hamza)
     // Alif: أ, إ, آ, ٱ -> ا
@@ -415,14 +420,14 @@ export default function App() {
       // Cek apakah semua kata kunci ada (dengan toleransi fuzzy)
       const allWordsPresent = wordsCorrect.every(wc => wordsVoice.some(wv => isFuzzyMatch(wv, wc)));
 
-      // Strictness check: User must have said at least as many words as the correct answer
-      const lengthCheck = wordsVoice.length >= wordsCorrect.length - 1;
+      // Strictness check: User must have said a significant portion
+      const lengthCheck = wordsVoice.length >= Math.min(wordsCorrect.length, 3) || wordsVoice.length >= wordsCorrect.length * 0.6;
 
       if (
-        (normalizedVoice.includes(normalizedCorrect) && lengthCheck) || 
+        (normalizedVoice.includes(normalizedCorrect)) || 
         tightVoice.includes(tightCorrect) ||
-        (allWordsPresent && lengthCheck) ||
-        similarity > 0.75 // Increased threshold for "benar dan sesuai"
+        (allWordsPresent) ||
+        similarity > 0.65 // Balanced threshold
       ) {
         playDing();
         setFeedback('correct');
