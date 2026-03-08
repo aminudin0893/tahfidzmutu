@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Play, Square, RefreshCcw, Download, CheckCircle, 
   XCircle, BookOpen, Award, User, Settings,
-  List, LayoutGrid, Book, MessageSquare, Leaf, Zap, Flame
+  List, LayoutGrid, Book, MessageSquare, Leaf, Zap, Flame, Mic, AlertCircle
 } from 'lucide-react';
 
 // --- Global Data untuk Distractor (Pilihan Salah) ---
@@ -64,6 +64,12 @@ export default function App() {
   const [gameType, setGameType] = useState('lanjut_ayat'); 
   const [difficulty, setDifficulty] = useState('menengah'); 
   
+  // Voice Recognition State
+  const [isListening, setIsListening] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const [recognition, setRecognition] = useState<any>(null);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  
   // Data State
   const [juzData, setJuzData] = useState<any[]>([]);
   const [isFetching, setIsFetching] = useState(false);
@@ -83,6 +89,41 @@ export default function App() {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   // --- Effects ---
+  useEffect(() => {
+    // Initialize Speech Recognition
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const rec = new SpeechRecognition();
+      rec.continuous = false;
+      rec.interimResults = false;
+      rec.lang = 'ar-SA'; // Default to Arabic for Lanjut Ayat
+      
+      rec.onresult = (event: any) => {
+        const result = event.results[0][0].transcript;
+        setTranscript(result);
+        setIsListening(false);
+      };
+      
+      rec.onerror = (event: any) => {
+        console.error("Speech recognition error", event.error);
+        setIsListening(false);
+        if (event.error === 'network') {
+          setVoiceError("Koneksi internet bermasalah atau layanan suara tidak tersedia. Pastikan internet stabil.");
+        } else if (event.error === 'not-allowed') {
+          setVoiceError("Izin mikrofon ditolak. Mohon izinkan akses mikrofon di browser Anda.");
+        } else {
+          setVoiceError(`Terjadi kesalahan: ${event.error}`);
+        }
+      };
+      
+      rec.onend = () => {
+        setIsListening(false);
+      };
+      
+      setRecognition(rec);
+    }
+  }, []);
+
   useEffect(() => {
     setIsFetching(true);
     Promise.all([
@@ -116,15 +157,22 @@ export default function App() {
   }, [selectedJuz]);
 
   useEffect(() => {
-    if (step === 'playing' && gameType === 'susun_kata' && questions[currentIndex]) {
+    if (step === 'playing' && (gameType === 'susun_kata' || gameType === 'susun_arti_perkata') && questions[currentIndex]) {
       const currentQ = questions[currentIndex];
-      const cleanText = currentQ.answerText.trim().replace(/\s{2,}/g, ' ');
+      const textToSplit = gameType === 'susun_kata' ? currentQ.answerText : currentQ.answerTranslation;
+      const cleanText = textToSplit.trim().replace(/\s{2,}/g, ' ');
       const words = cleanText.split(' ').map((w: string, i: number) => ({ id: i, text: w }));
       
       setScrambledWords(words.sort(() => 0.5 - Math.random()));
       setArrangedWords([]);
     }
   }, [currentIndex, step, gameType, questions]);
+
+  useEffect(() => {
+    if (step === 'playing' && gameType === 'lanjut_ayat_suara' && transcript && !isListening) {
+      checkVoiceAnswer(transcript);
+    }
+  }, [transcript, isListening, step, gameType]);
 
   // --- Handlers ---
   
@@ -147,7 +195,7 @@ export default function App() {
     }
 
     let validPrompts = pool;
-    if (gameType === 'lanjut_ayat' || gameType === 'susun_kata') {
+    if (gameType === 'lanjut_ayat' || gameType === 'lanjut_ayat_suara' || gameType === 'susun_kata' || gameType === 'susun_arti_perkata') {
       validPrompts = pool.filter(ayah => {
         const globalIndex = juzData.findIndex(a => a.number === ayah.number);
         if (globalIndex < 0 || globalIndex >= juzData.length - 1) return false;
@@ -175,14 +223,16 @@ export default function App() {
       const globalIndex = juzData.findIndex(a => a.number === promptAyah.number);
       let q: any = { prompt: promptAyah, type: gameType };
 
-      if (gameType === 'lanjut_ayat') {
+      if (gameType === 'lanjut_ayat' || gameType === 'lanjut_ayat_suara') {
         const answerAyah = juzData[globalIndex + 1];
         q.answerText = answerAyah.text;
-        const allTexts = juzData.map(a => a.text);
-        const distractors = getRandomDistractors(allTexts, q.answerText, numDistractors);
-        q.options = [q.answerText, ...distractors].sort(() => 0.5 - Math.random());
+        if (gameType === 'lanjut_ayat') {
+          const allTexts = juzData.map(a => a.text);
+          const distractors = getRandomDistractors(allTexts, q.answerText, numDistractors);
+          q.options = [q.answerText, ...distractors].sort(() => 0.5 - Math.random());
+        }
       } 
-      else if (gameType === 'susun_kata') {
+      else if (gameType === 'susun_kata' || gameType === 'susun_arti_perkata') {
         const answerAyah = juzData[globalIndex + 1];
         q.answerText = answerAyah.text;
         q.answerTranslation = answerAyah.translation;
@@ -205,18 +255,33 @@ export default function App() {
     setScore(0);
     setCurrentIndex(0);
     setFeedback(null);
+    setTranscript('');
     setStep('playing');
   };
 
   const normalizeArabic = (text: string) => {
     if (!text) return "";
-    return text
-      .trim()
-      .replace(/\s{2,}/g, ' ')
-      // Menghapus Basmalah di awal ayat jika ada (kecuali Al-Fatihah)
-      // Beberapa API menyertakan Basmalah di awal ayat pertama setiap surat
-      .replace(/^بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\s*/, '')
-      .replace(/^بِسْمِ اللهِ الرَّحْمٰنِ الرَّحِيْمِ\s*/, '');
+    
+    // 1. Dasar: Hapus harakat/diakritik & spasi berlebih
+    let normalized = text.trim().replace(/\s{2,}/g, ' ');
+    normalized = normalized.replace(/[\u064B-\u0652\u06D6-\u06ED\u0670]/g, '');
+    
+    // 2. Hapus tanda baca & karakter non-huruf Arab
+    normalized = normalized.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()؟ـ]/g, "");
+    
+    // 3. Normalisasi Karakter (Alif, Ya, Ta Marbuta)
+    // Alif: أ, إ, آ -> ا
+    normalized = normalized.replace(/[أإآ]/g, 'ا');
+    // Ya/Alif Maqsura: ي -> ى (di akhir kata sering tertukar)
+    normalized = normalized.replace(/ي(?=\s|$)/g, 'ى');
+    // Ta Marbuta: ة -> ه
+    normalized = normalized.replace(/ة/g, 'ه');
+    
+    // 4. Menghapus Basmalah di awal ayat jika ada
+    normalized = normalized.replace(/^بسم الله الرحمن الرحيم\s*/, '');
+    normalized = normalized.replace(/^بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\s*/, '');
+    
+    return normalized.trim();
   };
 
   const handleAnswerMultipleChoice = (selectedAnswer: string) => {
@@ -254,11 +319,77 @@ export default function App() {
     }
   };
 
+  const checkSusunArti = () => {
+    if (feedback) return;
+    const userAnswer = arrangedWords.map(w => w.text).join(' ').toLowerCase();
+    const currentQ = questions[currentIndex];
+    const correctAnswer = currentQ.answerTranslation.trim().replace(/\s{2,}/g, ' ').toLowerCase();
+
+    if (userAnswer === correctAnswer) {
+      playDing();
+      setFeedback('correct');
+      setScore(prev => prev + 1);
+    } else {
+      playBuzzer();
+      setFeedback('incorrect');
+    }
+  };
+
+  const startListening = () => {
+    if (recognition && !isListening) {
+      setTranscript('');
+      setVoiceError(null);
+      setIsListening(true);
+      try {
+        recognition.start();
+      } catch (e) {
+        console.error("Recognition start error", e);
+        setIsListening(false);
+        setVoiceError("Gagal memulai perekaman. Coba segarkan halaman.");
+      }
+    }
+  };
+
+  const checkVoiceAnswer = (voiceText: string) => {
+    if (feedback) return;
+    const currentQ = questions[currentIndex];
+    
+    // Normalize Arabic for comparison
+    const normalizedVoice = normalizeArabic(voiceText);
+    const normalizedCorrect = normalizeArabic(currentQ.answerText);
+    
+    // Hapus spasi untuk perbandingan "keras" jika includes gagal
+    const tightVoice = normalizedVoice.replace(/\s/g, '');
+    const tightCorrect = normalizedCorrect.replace(/\s/g, '');
+    
+    // Word-based similarity
+    const wordsVoice = normalizedVoice.split(/\s+/).filter(w => w.length > 0);
+    const wordsCorrect = normalizedCorrect.split(/\s+/).filter(w => w.length > 0);
+    const intersection = wordsVoice.filter(w => wordsCorrect.includes(w));
+    const similarity = intersection.length / Math.max(wordsVoice.length, wordsCorrect.length);
+
+    if (
+      normalizedVoice.includes(normalizedCorrect) || 
+      normalizedCorrect.includes(normalizedVoice) ||
+      tightVoice.includes(tightCorrect) ||
+      tightCorrect.includes(tightVoice) ||
+      similarity > 0.6 // Lenient threshold for voice recognition
+    ) {
+      playDing();
+      setFeedback('correct');
+      setScore(prev => prev + 1);
+    } else {
+      playBuzzer();
+      setFeedback('incorrect');
+    }
+  };
+
   const handleNext = () => {
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(prev => prev + 1);
       setFeedback(null);
       setIsPlayingAudio(false);
+      setTranscript('');
     } else {
       setStep('result');
     }
@@ -288,7 +419,7 @@ export default function App() {
         {/* Identitas Section */}
         <div className="space-y-4">
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-             Profil Pemain
+             Profil Peserta
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="relative group">
@@ -319,12 +450,14 @@ export default function App() {
         {/* Jenis Permainan Section */}
         <div className="space-y-4">
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
-            Pilih Mode Tantangan
+            Pilih Mode Ujian
           </h3>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {[
               { id: 'lanjut_ayat', icon: List, label: "Lanjut Ayat" },
+              { id: 'lanjut_ayat_suara', icon: Zap, label: "Lanjut Ayat (Suara)" },
               { id: 'susun_kata', icon: LayoutGrid, label: "Susun Kata" },
+              { id: 'susun_arti_perkata', icon: Book, label: "Susun Arti" },
               { id: 'tebak_surat', icon: Book, label: "Tebak Surat" },
               { id: 'tebak_arti', icon: MessageSquare, label: "Tebak Arti" },
             ].map(type => (
@@ -429,7 +562,7 @@ export default function App() {
           type="submit" disabled={isFetching}
           className="w-full py-5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 border-b-4 border-amber-600 active:border-b-0 active:translate-y-1 text-blue-950 font-black rounded-2xl shadow-lg shadow-amber-500/20 transition-all duration-150 disabled:opacity-50 flex justify-center items-center gap-3 text-lg uppercase tracking-wider"
         >
-          {isFetching ? <RefreshCcw className="w-6 h-6 animate-spin" /> : "Mulai Tantangan Sekarang"}
+          {isFetching ? <RefreshCcw className="w-6 h-6 animate-spin" /> : "Mulai Uji Kemampuan"}
         </button>
       </form>
     </div>
@@ -565,29 +698,44 @@ export default function App() {
             </div>
           )}
 
-          {/* GAME 2: SUSUN KATA */}
-          {gameType === 'susun_kata' && (
+          {/* GAME 2: SUSUN KATA & SUSUN ARTI */}
+          {(gameType === 'susun_kata' || gameType === 'susun_arti_perkata') && (
             <div className="space-y-6 text-center">
-              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Susun Ayat Selanjutnya</h3>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">
+                {gameType === 'susun_kata' ? "Susun Ayat Selanjutnya" : "Susun Arti Ayat Selanjutnya"}
+              </h3>
               
-              {difficulty === 'mudah' && (
+              {difficulty === 'mudah' && gameType === 'susun_kata' && (
                 <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 text-blue-900 text-sm font-medium mx-auto max-w-xl">
                   <span className="opacity-70 text-xs block mb-1 uppercase tracking-wider font-bold">Petunjuk Arti:</span> 
                   "{currentQ.answerTranslation}"
                 </div>
               )}
 
+              {difficulty === 'mudah' && gameType === 'susun_arti_perkata' && (
+                <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 text-amber-900 text-sm font-medium mx-auto max-w-xl">
+                  <span className="opacity-70 text-xs block mb-1 uppercase tracking-wider font-bold">Petunjuk Ayat (Perkata):</span> 
+                  <div className="flex flex-wrap-reverse justify-center gap-2 mt-2" dir="rtl">
+                    {currentQ.answerText.split(' ').map((word: string, i: number) => (
+                      <span key={i} className="bg-white px-3 py-1 rounded-lg border border-amber-200 font-arabic text-lg shadow-sm">
+                        {word}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Papan Susun (Jawaban User) */}
-              <div className="min-h-[140px] p-6 bg-slate-50 border-2 border-dashed border-slate-300 rounded-[2rem] flex flex-wrap-reverse justify-center gap-4 items-center" dir="rtl">
-                {arrangedWords.length === 0 && <span className="text-slate-400 my-auto text-sm font-bold italic uppercase tracking-wider">Ketuk kata di bawah untuk merangkai ayat...</span>}
+              <div className={`min-h-[140px] p-6 bg-slate-50 border-2 border-dashed border-slate-300 rounded-[2rem] flex flex-wrap justify-center gap-4 items-center ${gameType === 'susun_kata' ? 'flex-wrap-reverse' : ''}`} dir={gameType === 'susun_kata' ? 'rtl' : 'ltr'}>
+                {arrangedWords.length === 0 && <span className="text-slate-400 my-auto text-sm font-bold italic uppercase tracking-wider">Ketuk kata di bawah untuk merangkai {gameType === 'susun_kata' ? 'ayat' : 'arti'}...</span>}
                 {arrangedWords.map((word, idx) => (
-                  <button 
+                   <button 
                     key={idx} disabled={feedback !== null}
                     onClick={() => {
                       setArrangedWords(prev => prev.filter(w => w.id !== word.id));
                       setScrambledWords(prev => [...prev, word]);
                     }}
-                    className="px-5 py-3 bg-blue-900 hover:bg-rose-500 text-white border-b-4 border-blue-950 hover:border-rose-600 active:border-b-0 active:translate-y-1 font-arabic text-3xl sm:text-4xl rounded-xl shadow-sm transition-all"
+                    className={`px-5 py-3 ${gameType === 'susun_kata' ? 'bg-blue-900 border-blue-950 font-arabic text-3xl sm:text-4xl' : 'bg-amber-500 border-amber-600 font-bold text-lg'} hover:bg-rose-500 text-white border-b-4 hover:border-rose-600 active:border-b-0 active:translate-y-1 rounded-xl shadow-sm transition-all`}
                   >
                     {word.text}
                   </button>
@@ -595,7 +743,7 @@ export default function App() {
               </div>
 
               {/* Papan Kata Acak */}
-              <div className="p-6 bg-white border border-slate-100 rounded-[2rem] flex flex-wrap-reverse justify-center gap-4 shadow-sm" dir="rtl">
+              <div className={`p-6 bg-white border border-slate-100 rounded-[2rem] flex flex-wrap justify-center gap-4 shadow-sm ${gameType === 'susun_kata' ? 'flex-wrap-reverse' : ''}`} dir={gameType === 'susun_kata' ? 'rtl' : 'ltr'}>
                 {scrambledWords.map((word) => (
                   <button 
                     key={word.id} disabled={feedback !== null}
@@ -603,21 +751,65 @@ export default function App() {
                       setScrambledWords(prev => prev.filter(w => w.id !== word.id));
                       setArrangedWords(prev => [...prev, word]);
                     }}
-                    className="px-5 py-3 bg-white border-2 border-b-4 border-slate-200 hover:border-amber-400 hover:text-blue-900 text-slate-800 active:border-b-2 active:translate-y-0.5 font-arabic text-3xl sm:text-4xl rounded-xl transition-all"
+                    className={`px-5 py-3 bg-white border-2 border-b-4 border-slate-200 hover:border-amber-400 hover:text-blue-900 text-slate-800 active:border-b-2 active:translate-y-0.5 ${gameType === 'susun_kata' ? 'font-arabic text-3xl sm:text-4xl' : 'font-bold text-lg'} rounded-xl transition-all`}
                   >
                     {word.text}
                   </button>
                 ))}
               </div>
 
-              {!feedback && arrangedWords.length === currentQ.answerText.trim().replace(/\s{2,}/g, ' ').split(' ').length && (
+              {!feedback && arrangedWords.length === (gameType === 'susun_kata' ? currentQ.answerText : currentQ.answerTranslation).trim().replace(/\s{2,}/g, ' ').split(' ').length && (
                 <button 
-                  onClick={checkSusunKata} 
+                  onClick={gameType === 'susun_kata' ? checkSusunKata : checkSusunArti} 
                   className="w-full mt-6 py-4 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 border-b-4 border-amber-600 active:border-b-0 active:translate-y-1 text-blue-950 font-black rounded-2xl shadow-lg transition-all text-lg uppercase tracking-wider"
                 >
                   Periksa Jawaban
                 </button>
               )}
+            </div>
+          )}
+
+          {/* GAME 5: LANJUT AYAT SUARA */}
+          {gameType === 'lanjut_ayat_suara' && (
+            <div className="space-y-8 text-center">
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Gunakan Suara untuk Melanjutkan Ayat</h3>
+              
+              <div className="flex flex-col items-center gap-6">
+                <button 
+                  disabled={feedback !== null || isListening}
+                  onClick={startListening}
+                  className={`w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl border-b-8 active:border-b-0 active:translate-y-2 ${
+                    isListening 
+                      ? 'bg-rose-500 border-rose-700 animate-pulse' 
+                      : 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 hover:from-emerald-400 hover:to-emerald-500'
+                  } text-white`}
+                >
+                  <Mic className={`w-12 h-12 ${isListening ? 'animate-bounce' : ''}`} />
+                </button>
+                
+                <div className="space-y-2">
+                  <p className={`text-sm font-bold uppercase tracking-widest ${isListening ? 'text-rose-500' : 'text-slate-400'}`}>
+                    {isListening ? "Mendengarkan..." : "Klik tombol di atas lalu bicara"}
+                  </p>
+                  
+                  {voiceError && (
+                    <div className="mt-4 p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-600 text-xs font-bold flex flex-col gap-2 animate-shake">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                        <span>{voiceError}</span>
+                      </div>
+                      <p className="text-[10px] opacity-70 font-medium">Tips: Gunakan browser Chrome atau Edge, dan pastikan koneksi internet aktif.</p>
+                    </div>
+                  )}
+
+                  {transcript && (
+                    <div className="mt-4 p-6 bg-slate-50 rounded-3xl border border-slate-200 w-full max-w-md mx-auto">
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Hasil Suara:</p>
+                      <p className="font-arabic text-3xl text-blue-900 leading-relaxed" dir="rtl">{transcript}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -634,10 +826,14 @@ export default function App() {
                   <h4 className={`text-xl font-black ${feedback === 'correct' ? 'text-emerald-700' : 'text-rose-700'}`}>
                     {feedback === 'correct' ? 'Sempurna! Alhamdulillah.' : 'Kurang Tepat, Jangan Menyerah!'}
                   </h4>
-                  {feedback === 'incorrect' && gameType === 'susun_kata' && (
+                  {feedback === 'incorrect' && (gameType === 'susun_kata' || gameType === 'susun_arti_perkata') && (
                      <div className="mt-4 bg-white p-5 rounded-2xl border border-rose-100 shadow-sm">
                        <p className="text-xs text-rose-500 font-bold uppercase tracking-wider mb-3">Susunan yang Benar:</p>
-                       <p className="text-2xl sm:text-3xl font-arabic text-rose-900 leading-[2.2]" dir="rtl">{currentQ.answerText}</p>
+                       {gameType === 'susun_kata' ? (
+                         <p className="text-2xl sm:text-3xl font-arabic text-rose-900 leading-[2.2]" dir="rtl">{currentQ.answerText}</p>
+                       ) : (
+                         <p className="text-lg font-bold text-rose-900">{currentQ.answerTranslation}</p>
+                       )}
                      </div>
                   )}
                 </div>
@@ -664,7 +860,9 @@ export default function App() {
     
     const gameTypeLabels: Record<string, string> = {
       'lanjut_ayat': 'Lanjut Ayat',
+      'lanjut_ayat_suara': 'Lanjut Ayat (Suara)',
       'susun_kata': 'Susun Kata',
+      'susun_arti_perkata': 'Susun Arti Perkata',
       'tebak_surat': 'Tebak Nama Surat',
       'tebak_arti': 'Tebak Arti Ayat'
     };
@@ -689,7 +887,7 @@ export default function App() {
               <div className={`text-6xl font-black mb-1 drop-shadow-sm ${finalScore >= 80 ? 'text-amber-500' : finalScore >= 50 ? 'text-blue-500' : 'text-rose-500'}`}>
                 {finalScore}
               </div>
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Skor Akhir</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nilai Akhir</div>
             </div>
 
             <div className="space-y-3 bg-white p-4 sm:p-6 rounded-[1.5rem] border border-slate-100 shadow-sm">

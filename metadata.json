@@ -1,5 +1,5 @@
 {
   "name": "TahfidzPro - Quran Memorization Game",
   "description": "An interactive platform to test and strengthen Quran memorization with multiple game modes and audio feedback.",
-  "requestFramePermissions": []
+  "requestFramePermissions": ["microphone"]
 }
