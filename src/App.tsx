@@ -66,6 +66,7 @@ export default function App() {
   
   // Voice Recognition State
   const [isListening, setIsListening] = useState(false);
+  const [transcripts, setTranscripts] = useState<string[]>([]);
   const [transcript, setTranscript] = useState('');
   const [recognition, setRecognition] = useState<any>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
@@ -100,8 +101,11 @@ export default function App() {
       rec.lang = 'ar-SA'; // Default to Arabic for Lanjut Ayat
       
       rec.onresult = (event: any) => {
-        const result = event.results[0][0].transcript;
-        setTranscript(result);
+        const results = event.results[0];
+        const allTranscripts = Array.from(results).map((r: any) => r.transcript);
+        
+        setTranscript(allTranscripts[0]); // Untuk tampilan UI
+        setTranscripts(allTranscripts);   // Untuk pengecekan akurasi
         setIsListening(false);
       };
       
@@ -170,10 +174,10 @@ export default function App() {
   }, [currentIndex, step, gameType, questions]);
 
   useEffect(() => {
-    if (step === 'playing' && gameType === 'lanjut_ayat_suara' && transcript && !isListening) {
-      checkVoiceAnswer(transcript);
+    if (step === 'playing' && gameType === 'lanjut_ayat_suara' && transcripts.length > 0 && !isListening) {
+      checkVoiceAnswerMulti(transcripts);
     }
-  }, [transcript, isListening, step, gameType]);
+  }, [transcripts, isListening, step, gameType]);
 
   // --- Handlers ---
   
@@ -272,17 +276,27 @@ export default function App() {
     // 2. Hapus tanda baca & karakter non-huruf Arab
     normalized = normalized.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()؟ـ]/g, "");
     
-    // 3. Normalisasi Karakter (Alif, Ya, Ta Marbuta)
+    // 3. Normalisasi Karakter (Alif, Ya, Ta Marbuta, Waw, Hamza)
     // Alif: أ, إ, آ -> ا
     normalized = normalized.replace(/[أإآ]/g, 'ا');
-    // Ya/Alif Maqsura: ي -> ى (di akhir kata sering tertukar)
-    normalized = normalized.replace(/ي(?=\s|$)/g, 'ى');
+    // Ya/Alif Maqsura: ي, ى -> ي (Normalisasi ke satu bentuk)
+    normalized = normalized.replace(/[يى]/g, 'ي');
     // Ta Marbuta: ة -> ه
     normalized = normalized.replace(/ة/g, 'ه');
+    // Waw: ؤ -> و
+    normalized = normalized.replace(/ؤ/g, 'و');
+    // Hamza on Chair: ئ -> ي
+    normalized = normalized.replace(/ئ/g, 'ي');
     
-    // 4. Menghapus Basmalah di awal ayat jika ada
-    normalized = normalized.replace(/^بسم الله الرحمن الرحيم\s*/, '');
-    normalized = normalized.replace(/^بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\s*/, '');
+    // 4. Menghapus Basmalah di awal ayat jika ada (lebih agresif)
+    const basmalahPatterns = [
+      /^بسم الله الرحمن الرحيم\s*/,
+      /^بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\s*/,
+      /^بسم الله\s*/
+    ];
+    basmalahPatterns.forEach(pattern => {
+      normalized = normalized.replace(pattern, '');
+    });
     
     return normalized.trim();
   };
@@ -341,6 +355,7 @@ export default function App() {
   const startListening = () => {
     if (recognition && !isListening) {
       setTranscript('');
+      setTranscripts([]);
       setVoiceError(null);
       setIsListening(true);
       try {
@@ -353,47 +368,54 @@ export default function App() {
     }
   };
 
-  const checkVoiceAnswer = (voiceText: string) => {
+  const checkVoiceAnswerMulti = (voiceTexts: string[]) => {
     if (feedback) return;
     const currentQ = questions[currentIndex];
-    
-    // Normalize Arabic for comparison
-    const normalizedVoice = normalizeArabic(voiceText);
     const normalizedCorrect = normalizeArabic(currentQ.answerText);
-    
-    // Hapus spasi untuk perbandingan "keras" jika includes gagal
-    const tightVoice = normalizedVoice.replace(/\s/g, '');
     const tightCorrect = normalizedCorrect.replace(/\s/g, '');
-    
-    // Word-based similarity
-    const wordsVoice = normalizedVoice.split(/\s+/).filter(w => w.length > 0);
     const wordsCorrect = normalizedCorrect.split(/\s+/).filter(w => w.length > 0);
-    
-    // Check for exact match first
-    if (normalizedVoice === normalizedCorrect || tightVoice === tightCorrect) {
-      playDing();
-      setFeedback('correct');
-      setScore(prev => prev + 1);
-      return;
+
+    // Cek setiap alternatif hasil suara
+    for (const voiceText of voiceTexts) {
+      const normalizedVoice = normalizeArabic(voiceText);
+      const tightVoice = normalizedVoice.replace(/\s/g, '');
+      const wordsVoice = normalizedVoice.split(/\s+/).filter(w => w.length > 0);
+
+      // 1. Exact Match
+      if (normalizedVoice === normalizedCorrect || tightVoice === tightCorrect) {
+        playDing();
+        setFeedback('correct');
+        setScore(prev => prev + 1);
+        return;
+      }
+
+      // 2. Similarity & Inclusion
+      const intersection = wordsVoice.filter(w => wordsCorrect.includes(w));
+      const similarity = intersection.length / Math.max(wordsVoice.length, wordsCorrect.length);
+      const allWordsPresent = wordsCorrect.every(w => wordsVoice.includes(w));
+
+      if (
+        normalizedVoice.includes(normalizedCorrect) || 
+        normalizedCorrect.includes(normalizedVoice) ||
+        tightVoice.includes(tightCorrect) ||
+        tightCorrect.includes(tightVoice) ||
+        allWordsPresent ||
+        similarity > 0.65
+      ) {
+        playDing();
+        setFeedback('correct');
+        setScore(prev => prev + 1);
+        return;
+      }
     }
 
-    const intersection = wordsVoice.filter(w => wordsCorrect.includes(w));
-    const similarity = intersection.length / Math.max(wordsVoice.length, wordsCorrect.length);
+    // Jika tidak ada alternatif yang cocok
+    playBuzzer();
+    setFeedback('incorrect');
+  };
 
-    if (
-      normalizedVoice.includes(normalizedCorrect) || 
-      normalizedCorrect.includes(normalizedVoice) ||
-      tightVoice.includes(tightCorrect) ||
-      tightCorrect.includes(tightVoice) ||
-      similarity > 0.75 // Slightly stricter for better accuracy as requested
-    ) {
-      playDing();
-      setFeedback('correct');
-      setScore(prev => prev + 1);
-    } else {
-      playBuzzer();
-      setFeedback('incorrect');
-    }
+  const checkVoiceAnswer = (voiceText: string) => {
+    checkVoiceAnswerMulti([voiceText]);
   };
 
   const handleNext = () => {
