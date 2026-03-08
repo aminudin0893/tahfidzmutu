@@ -271,15 +271,16 @@ export default function App() {
     
     // 1. Dasar: Hapus harakat/diakritik & spasi berlebih
     let normalized = text.trim().replace(/\s{2,}/g, ' ');
-    normalized = normalized.replace(/[\u064B-\u0652\u06D6-\u06ED\u0670]/g, '');
+    // Hapus semua harakat (Fatha, Damma, Kasra, Shadda, Sukun, Tanwin)
+    normalized = normalized.replace(/[\u064B-\u0652\u06D6-\u06ED\u0670\u0671\u0653\u0654\u0655]/g, '');
     
-    // 2. Hapus tanda baca & karakter non-huruf Arab
+    // 2. Hapus tanda baca & karakter non-huruf Arab (termasuk Tatweel)
     normalized = normalized.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()؟ـ]/g, "");
     
     // 3. Normalisasi Karakter (Alif, Ya, Ta Marbuta, Waw, Hamza)
-    // Alif: أ, إ, آ -> ا
-    normalized = normalized.replace(/[أإآ]/g, 'ا');
-    // Ya/Alif Maqsura: ي, ى -> ي (Normalisasi ke satu bentuk)
+    // Alif: أ, إ, آ, ٱ -> ا
+    normalized = normalized.replace(/[أإآٱ]/g, 'ا');
+    // Ya/Alif Maqsura: ي, ى -> ي
     normalized = normalized.replace(/[يى]/g, 'ي');
     // Ta Marbuta: ة -> ه
     normalized = normalized.replace(/ة/g, 'ه');
@@ -290,12 +291,13 @@ export default function App() {
     // Hamza alone: ء -> (biasanya diabaikan dalam STT jika di akhir)
     normalized = normalized.replace(/ء/g, '');
     
-    // 4. Menghapus Basmalah di awal ayat jika ada (lebih agresif)
+    // 4. Menghapus Basmalah & Hamdalah di awal ayat jika ada (lebih agresif)
     const basmalahPatterns = [
       /^بسم الله الرحمن الرحيم\s*/,
       /^بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\s*/,
       /^بسم الله\s*/,
-      /^الحمد لله\s*/ // Kadang user mulai dengan hamdalah
+      /^الحمد لله\s*/,
+      /^اعوذ بالله من الشيطان الرجيم\s*/
     ];
     basmalahPatterns.forEach(pattern => {
       normalized = normalized.replace(pattern, '');
@@ -413,13 +415,14 @@ export default function App() {
       // Cek apakah semua kata kunci ada (dengan toleransi fuzzy)
       const allWordsPresent = wordsCorrect.every(wc => wordsVoice.some(wv => isFuzzyMatch(wv, wc)));
 
+      // Strictness check: User must have said at least as many words as the correct answer
+      const lengthCheck = wordsVoice.length >= wordsCorrect.length - 1;
+
       if (
-        normalizedVoice.includes(normalizedCorrect) || 
-        normalizedCorrect.includes(normalizedVoice) ||
+        (normalizedVoice.includes(normalizedCorrect) && lengthCheck) || 
         tightVoice.includes(tightCorrect) ||
-        tightCorrect.includes(tightVoice) ||
-        allWordsPresent ||
-        similarity > 0.6
+        (allWordsPresent && lengthCheck) ||
+        similarity > 0.75 // Increased threshold for "benar dan sesuai"
       ) {
         playDing();
         setFeedback('correct');
