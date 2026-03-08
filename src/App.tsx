@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Play, Square, RefreshCcw, Download, CheckCircle, 
   XCircle, BookOpen, Award, User, Settings,
-  List, LayoutGrid, Book, MessageSquare, Leaf, Zap, Flame, Mic, AlertCircle
+  List, LayoutGrid, Book, MessageSquare, Leaf, Zap, Flame, Mic, AlertCircle, Star, Volume2
 } from 'lucide-react';
 
 // --- Global Data untuk Distractor (Pilihan Salah) ---
@@ -227,6 +227,7 @@ export default function App() {
       if (gameType === 'lanjut_ayat' || gameType === 'lanjut_ayat_suara') {
         const answerAyah = juzData[globalIndex + 1];
         q.answerText = answerAyah.text;
+        q.answerAudio = answerAyah.audio;
         if (gameType === 'lanjut_ayat') {
           const allTexts = juzData.map(a => a.text);
           const distractors = getRandomDistractors(allTexts, q.answerText, numDistractors);
@@ -237,6 +238,7 @@ export default function App() {
         const answerAyah = juzData[globalIndex + 1];
         q.answerText = answerAyah.text;
         q.answerTranslation = answerAyah.translation;
+        q.answerAudio = answerAyah.audio;
       } 
       else if (gameType === 'tebak_surat') {
         q.answerText = ALL_SURAHS[promptAyah.surah.number - 1]; 
@@ -366,6 +368,15 @@ export default function App() {
     // Word-based similarity
     const wordsVoice = normalizedVoice.split(/\s+/).filter(w => w.length > 0);
     const wordsCorrect = normalizedCorrect.split(/\s+/).filter(w => w.length > 0);
+    
+    // Check for exact match first
+    if (normalizedVoice === normalizedCorrect || tightVoice === tightCorrect) {
+      playDing();
+      setFeedback('correct');
+      setScore(prev => prev + 1);
+      return;
+    }
+
     const intersection = wordsVoice.filter(w => wordsCorrect.includes(w));
     const similarity = intersection.length / Math.max(wordsVoice.length, wordsCorrect.length);
 
@@ -374,7 +385,7 @@ export default function App() {
       normalizedCorrect.includes(normalizedVoice) ||
       tightVoice.includes(tightCorrect) ||
       tightCorrect.includes(tightVoice) ||
-      similarity > 0.6 // Lenient threshold for voice recognition
+      similarity > 0.75 // Slightly stricter for better accuracy as requested
     ) {
       playDing();
       setFeedback('correct');
@@ -736,7 +747,7 @@ export default function App() {
               )}
 
               {/* Papan Susun (Jawaban User) */}
-              <div className={`min-h-[140px] p-6 bg-slate-50 border-2 border-dashed border-slate-300 rounded-[2rem] flex flex-wrap justify-center gap-4 items-center ${gameType === 'susun_kata' ? 'flex-wrap-reverse' : ''}`} dir={gameType === 'susun_kata' ? 'rtl' : 'ltr'}>
+              <div className={`min-h-[140px] p-6 bg-slate-50 border-2 border-dashed border-slate-300 rounded-[2rem] flex flex-wrap justify-center gap-4 items-center`} dir={gameType === 'susun_kata' ? 'rtl' : 'ltr'}>
                 {arrangedWords.length === 0 && <span className="text-slate-400 my-auto text-sm font-bold italic uppercase tracking-wider">Ketuk kata di bawah untuk merangkai {gameType === 'susun_kata' ? 'ayat' : 'arti'}...</span>}
                 {arrangedWords.map((word, idx) => (
                    <button 
@@ -756,7 +767,7 @@ export default function App() {
               </div>
 
               {/* Papan Kata Acak */}
-              <div className={`p-6 bg-white border border-slate-100 rounded-[2rem] flex flex-wrap justify-center gap-4 shadow-sm ${gameType === 'susun_kata' ? 'flex-wrap-reverse' : ''}`} dir={gameType === 'susun_kata' ? 'rtl' : 'ltr'}>
+              <div className={`p-6 bg-white border border-slate-100 rounded-[2rem] flex flex-wrap justify-center gap-4 shadow-sm`} dir={gameType === 'susun_kata' ? 'rtl' : 'ltr'}>
                 {scrambledWords.map((word) => (
                   <button 
                     key={word.id} disabled={feedback !== null}
@@ -868,7 +879,21 @@ export default function App() {
                        {gameType === 'susun_arti_perkata' ? (
                          <p className="text-lg font-bold text-rose-900">{currentQ.answerTranslation}</p>
                        ) : (
-                         <p className="text-2xl sm:text-3xl font-arabic text-rose-900 leading-[2.2]" dir="rtl">{currentQ.answerText}</p>
+                         <div className="space-y-4">
+                           <p className="text-2xl sm:text-3xl font-arabic text-rose-900 leading-[2.2]" dir="rtl">{currentQ.answerText}</p>
+                           {currentQ.answerAudio && (
+                             <button 
+                               onClick={() => {
+                                 const audio = new Audio(currentQ.answerAudio);
+                                 audio.play();
+                               }}
+                               className="flex items-center gap-2 px-4 py-2 bg-rose-100 text-rose-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-rose-200 transition-all"
+                             >
+                               <Volume2 className="w-4 h-4" />
+                               Dengarkan Koreksi
+                             </button>
+                           )}
+                         </div>
                        )}
                      </div>
                   )}
