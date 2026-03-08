@@ -97,7 +97,7 @@ export default function App() {
       const rec = new SpeechRecognition();
       rec.continuous = false;
       rec.interimResults = false;
-      rec.maxAlternatives = 3;
+      rec.maxAlternatives = 10;
       rec.lang = 'ar-SA'; // Default to Arabic for Lanjut Ayat
       
       rec.onresult = (event: any) => {
@@ -287,12 +287,15 @@ export default function App() {
     normalized = normalized.replace(/ؤ/g, 'و');
     // Hamza on Chair: ئ -> ي
     normalized = normalized.replace(/ئ/g, 'ي');
+    // Hamza alone: ء -> (biasanya diabaikan dalam STT jika di akhir)
+    normalized = normalized.replace(/ء/g, '');
     
     // 4. Menghapus Basmalah di awal ayat jika ada (lebih agresif)
     const basmalahPatterns = [
       /^بسم الله الرحمن الرحيم\s*/,
       /^بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\s*/,
-      /^بسم الله\s*/
+      /^بسم الله\s*/,
+      /^الحمد لله\s*/ // Kadang user mulai dengan hamdalah
     ];
     basmalahPatterns.forEach(pattern => {
       normalized = normalized.replace(pattern, '');
@@ -375,13 +378,27 @@ export default function App() {
     const tightCorrect = normalizedCorrect.replace(/\s/g, '');
     const wordsCorrect = normalizedCorrect.split(/\s+/).filter(w => w.length > 0);
 
+    // Fungsi pembantu untuk fuzzy match kata (1 char diff allowed for long words)
+    const isFuzzyMatch = (w1: string, w2: string) => {
+      if (w1 === w2) return true;
+      if (Math.abs(w1.length - w2.length) > 1) return false;
+      if (w1.length < 4) return w1 === w2; // Kata pendek harus pas
+      
+      let diff = 0;
+      const len = Math.min(w1.length, w2.length);
+      for (let i = 0; i < len; i++) {
+        if (w1[i] !== w2[i]) diff++;
+      }
+      return diff <= 1;
+    };
+
     // Cek setiap alternatif hasil suara
     for (const voiceText of voiceTexts) {
       const normalizedVoice = normalizeArabic(voiceText);
       const tightVoice = normalizedVoice.replace(/\s/g, '');
       const wordsVoice = normalizedVoice.split(/\s+/).filter(w => w.length > 0);
 
-      // 1. Exact Match
+      // 1. Exact Match (Normal & Tight)
       if (normalizedVoice === normalizedCorrect || tightVoice === tightCorrect) {
         playDing();
         setFeedback('correct');
@@ -389,10 +406,12 @@ export default function App() {
         return;
       }
 
-      // 2. Similarity & Inclusion
-      const intersection = wordsVoice.filter(w => wordsCorrect.includes(w));
+      // 2. Inclusion & Fuzzy Word Matching
+      const intersection = wordsVoice.filter(wv => wordsCorrect.some(wc => isFuzzyMatch(wv, wc)));
       const similarity = intersection.length / Math.max(wordsVoice.length, wordsCorrect.length);
-      const allWordsPresent = wordsCorrect.every(w => wordsVoice.includes(w));
+      
+      // Cek apakah semua kata kunci ada (dengan toleransi fuzzy)
+      const allWordsPresent = wordsCorrect.every(wc => wordsVoice.some(wv => isFuzzyMatch(wv, wc)));
 
       if (
         normalizedVoice.includes(normalizedCorrect) || 
@@ -400,7 +419,7 @@ export default function App() {
         tightVoice.includes(tightCorrect) ||
         tightCorrect.includes(tightVoice) ||
         allWordsPresent ||
-        similarity > 0.65
+        similarity > 0.6
       ) {
         playDing();
         setFeedback('correct');
