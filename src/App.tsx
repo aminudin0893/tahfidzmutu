@@ -826,13 +826,15 @@ export default function App() {
                   <h4 className={`text-xl font-black ${feedback === 'correct' ? 'text-emerald-700' : 'text-rose-700'}`}>
                     {feedback === 'correct' ? 'Sempurna! Alhamdulillah.' : 'Kurang Tepat, Jangan Menyerah!'}
                   </h4>
-                  {feedback === 'incorrect' && (gameType === 'susun_kata' || gameType === 'susun_arti_perkata') && (
+                  {feedback === 'incorrect' && (gameType === 'susun_kata' || gameType === 'susun_arti_perkata' || gameType === 'lanjut_ayat_suara') && (
                      <div className="mt-4 bg-white p-5 rounded-2xl border border-rose-100 shadow-sm">
-                       <p className="text-xs text-rose-500 font-bold uppercase tracking-wider mb-3">Susunan yang Benar:</p>
-                       {gameType === 'susun_kata' ? (
-                         <p className="text-2xl sm:text-3xl font-arabic text-rose-900 leading-[2.2]" dir="rtl">{currentQ.answerText}</p>
-                       ) : (
+                       <p className="text-xs text-rose-500 font-bold uppercase tracking-wider mb-3">
+                         {gameType === 'susun_arti_perkata' ? 'Susunan yang Benar:' : 'Ayat yang Benar:'}
+                       </p>
+                       {gameType === 'susun_arti_perkata' ? (
                          <p className="text-lg font-bold text-rose-900">{currentQ.answerTranslation}</p>
+                       ) : (
+                         <p className="text-2xl sm:text-3xl font-arabic text-rose-900 leading-[2.2]" dir="rtl">{currentQ.answerText}</p>
                        )}
                      </div>
                   )}
