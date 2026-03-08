@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Play, Square, RefreshCcw, Download, CheckCircle, 
-  XCircle, BookOpen, Award, User, Settings,
+  XCircle, BookOpen, Award, User, Settings, ChevronLeft,
   List, LayoutGrid, Book, MessageSquare, Leaf, Zap, Flame, Mic, AlertCircle, Star, Volume2
 } from 'lucide-react';
 
@@ -86,6 +86,9 @@ export default function App() {
   const [scrambledWords, setScrambledWords] = useState<any[]>([]);
   const [arrangedWords, setArrangedWords] = useState<any[]>([]);
   const [showAlhamdulillah, setShowAlhamdulillah] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingAnswer, setPendingAnswer] = useState<string | null>(null);
+  const [confirmType, setConfirmType] = useState<'answer' | 'back'>('answer');
 
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -174,10 +177,11 @@ export default function App() {
   }, [currentIndex, step, gameType, questions]);
 
   useEffect(() => {
-    if (step === 'playing' && gameType === 'lanjut_ayat_suara' && transcripts.length > 0 && !isListening) {
-      checkVoiceAnswerMulti(transcripts);
+    if (step === 'playing' && gameType === 'lanjut_ayat_suara' && transcripts.length > 0 && !isListening && !feedback && !showConfirmModal) {
+      setConfirmType('answer');
+      setShowConfirmModal(true);
     }
-  }, [transcripts, isListening, step, gameType]);
+  }, [transcripts, isListening, step, gameType, feedback, showConfirmModal]);
 
   // --- Handlers ---
   
@@ -336,7 +340,12 @@ export default function App() {
 
   const handleAnswerMultipleChoice = (selectedAnswer: string) => {
     if (feedback) return; 
-    
+    setPendingAnswer(selectedAnswer);
+    setConfirmType('answer');
+    setShowConfirmModal(true);
+  };
+
+  const executeMultipleChoice = (selectedAnswer: string) => {
     const currentQ = questions[currentIndex];
     const normalizedSelected = normalizeArabic(selectedAnswer);
     const normalizedCorrect = normalizeArabic(currentQ.answerText);
@@ -353,6 +362,11 @@ export default function App() {
 
   const checkSusunKata = () => {
     if (feedback) return;
+    setConfirmType('answer');
+    setShowConfirmModal(true);
+  };
+
+  const executeSusunKata = () => {
     const userAnswer = arrangedWords.map(w => w.text).join(' ');
     const currentQ = questions[currentIndex];
     
@@ -371,6 +385,11 @@ export default function App() {
 
   const checkSusunArti = () => {
     if (feedback) return;
+    setConfirmType('answer');
+    setShowConfirmModal(true);
+  };
+
+  const executeSusunArti = () => {
     const userAnswer = arrangedWords.map(w => w.text).join(' ').toLowerCase();
     const currentQ = questions[currentIndex];
     const correctAnswer = currentQ.answerTranslation.trim().replace(/\s{2,}/g, ' ').toLowerCase();
@@ -682,14 +701,78 @@ export default function App() {
     };
 
     return (
-      <div className="max-w-3xl mx-auto bg-white rounded-[2.5rem] shadow-[0_20px_50px_-12px_rgba(30,58,138,0.15)] overflow-hidden border border-slate-100">
+      <div className="max-w-3xl mx-auto bg-white rounded-[2.5rem] shadow-[0_20px_50px_-12px_rgba(30,58,138,0.15)] overflow-hidden border border-slate-100 relative">
         
+        {/* Confirmation Modal */}
+        {showConfirmModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-blue-950/40 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full border border-slate-100 animate-in zoom-in-95 duration-200">
+              <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <AlertCircle className="w-8 h-8 text-amber-600" />
+              </div>
+              <h3 className="text-xl font-black text-slate-800 text-center mb-2">
+                {confirmType === 'answer' ? 'Yakin dengan jawabanmu?' : 'Ingin kembali ke menu?'}
+              </h3>
+              <p className="text-slate-500 text-center text-sm mb-8 font-medium">
+                {confirmType === 'answer' 
+                  ? 'Pastikan jawabanmu sudah benar sebelum dikirim.' 
+                  : 'Progres hafalanmu saat ini tidak akan tersimpan.'}
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <button 
+                  onClick={() => {
+                    setShowConfirmModal(false);
+                    setPendingAnswer(null);
+                  }}
+                  className="py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black rounded-2xl transition-all uppercase tracking-wider text-xs"
+                >
+                  Belum
+                </button>
+                <button 
+                  onClick={() => {
+                    setShowConfirmModal(false);
+                    if (confirmType === 'answer') {
+                      if (gameType === 'lanjut_ayat_suara') {
+                        checkVoiceAnswerMulti(transcripts);
+                      } else if (gameType === 'susun_kata') {
+                        executeSusunKata();
+                      } else if (gameType === 'susun_arti_perkata') {
+                        executeSusunArti();
+                      } else {
+                        executeMultipleChoice(pendingAnswer!);
+                      }
+                    } else {
+                      setStep('setup');
+                    }
+                    setPendingAnswer(null);
+                  }}
+                  className="py-4 bg-blue-900 hover:bg-blue-800 text-white font-black rounded-2xl transition-all shadow-lg shadow-blue-900/20 uppercase tracking-wider text-xs"
+                >
+                  Iya
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Modern Progress Header */}
         <div className="bg-white p-6 border-b border-slate-100">
           <div className="flex justify-between items-center mb-3">
-            <span className="text-slate-500 font-bold text-sm uppercase tracking-wider">
-              Soal {currentIndex + 1} <span className="text-slate-400 font-medium">dari {questions.length}</span>
-            </span>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => {
+                  setConfirmType('back');
+                  setShowConfirmModal(true);
+                }}
+                className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400 hover:text-slate-600"
+                title="Kembali ke Menu"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <span className="text-slate-500 font-bold text-sm uppercase tracking-wider">
+                Soal {currentIndex + 1} <span className="text-slate-400 font-medium">dari {questions.length}</span>
+              </span>
+            </div>
             <div className="flex items-center gap-3">
               <div className="hidden sm:flex items-center gap-1.5 bg-rose-50 text-rose-600 border border-rose-100 py-1.5 px-4 rounded-full text-sm font-black shadow-sm">
                 <Flame className="w-4 h-4 fill-rose-500" />
