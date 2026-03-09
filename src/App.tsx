@@ -86,8 +86,10 @@ export default function App() {
   const [scrambledWords, setScrambledWords] = useState<any[]>([]);
   const [arrangedWords, setArrangedWords] = useState<any[]>([]);
   const [showAlhamdulillah, setShowAlhamdulillah] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(80);
 
   const audioRef = useRef<HTMLAudioElement>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- Effects ---
   useEffect(() => {
@@ -179,6 +181,29 @@ export default function App() {
       checkVoiceAnswerMulti(transcripts);
     }
   }, [transcripts, isListening, step, gameType]);
+
+  useEffect(() => {
+    if (step === 'playing' && difficulty === 'sulit' && !feedback) {
+      setTimeLeft(80);
+      if (timerRef.current) clearInterval(timerRef.current);
+      
+      timerRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            playBuzzer();
+            setFeedback('incorrect');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [currentIndex, step, difficulty, feedback]);
 
   // --- Handlers ---
   
@@ -273,6 +298,7 @@ export default function App() {
     setTranscript('');
     setTranscripts([]);
     setIsPlayingAudio(false);
+    if (difficulty === 'sulit') setTimeLeft(80);
     setStep('playing');
   };
 
@@ -435,6 +461,7 @@ export default function App() {
       setIsPlayingAudio(false);
       setTranscript('');
       setTranscripts([]);
+      if (difficulty === 'sulit') setTimeLeft(80);
     } else {
       setStep('result');
     }
@@ -667,6 +694,15 @@ export default function App() {
               style={{ width: `${progressPercent}%` }}
             ></div>
           </div>
+          
+          {difficulty === 'sulit' && !feedback && (
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border-2 font-black transition-all ${timeLeft <= 3 ? 'bg-rose-50 border-rose-500 text-rose-600 animate-pulse' : 'bg-amber-50 border-amber-400 text-amber-600'}`}>
+                <RefreshCcw className={`w-4 h-4 ${timeLeft <= 3 ? 'animate-spin' : ''}`} />
+                Waktu: {timeLeft}s
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="p-6 sm:p-10">
@@ -911,9 +947,9 @@ export default function App() {
                 </div>
                 <div className="flex-1">
                   <h4 className={`text-xl font-black ${feedback === 'correct' ? 'text-emerald-700' : 'text-rose-700'}`}>
-                    {feedback === 'correct' ? 'Sempurna! Alhamdulillah.' : 'Kurang Tepat, Jangan Menyerah!'}
+                    {feedback === 'correct' ? 'Sempurna! Alhamdulillah.' : (timeLeft === 0 ? 'Waktu Habis!' : 'Kurang Tepat, Jangan Menyerah!')}
                   </h4>
-                  {feedback === 'incorrect' && (gameType === 'susun_kata' || gameType === 'susun_arti_perkata' || gameType === 'lanjut_ayat_suara') && (
+                  {feedback === 'incorrect' && timeLeft > 0 && (gameType === 'susun_kata' || gameType === 'susun_arti_perkata' || gameType === 'lanjut_ayat_suara') && (
                      <div className="mt-4 bg-white p-5 rounded-2xl border border-rose-100 shadow-sm">
                        <p className="text-xs text-rose-500 font-bold uppercase tracking-wider mb-3">
                          {gameType === 'susun_arti_perkata' ? 'Susunan yang Benar:' : 'Ayat yang Benar:'}
@@ -1054,6 +1090,7 @@ export default function App() {
               setTranscript('');
               setTranscripts([]);
               setIsPlayingAudio(false);
+              setTimeLeft(80);
             }}
             className="w-full bg-blue-900 text-white py-4 rounded-2xl font-black hover:bg-blue-800 transition-all shadow-lg shadow-blue-900/20 flex items-center justify-center gap-3 text-lg border-b-4 border-blue-950 active:border-b-0 active:translate-y-1"
           >
