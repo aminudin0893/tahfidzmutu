@@ -269,22 +269,13 @@ export default function App() {
   const normalizeArabic = (text: string) => {
     if (!text) return "";
     
-    // 0. Unicode Normalization (NFC) to ensure consistent character representation
-    let normalized = text.normalize('NFC');
-    
     // 1. Dasar: Hapus harakat/diakritik & spasi berlebih
-    normalized = normalized.trim().replace(/\s{2,}/g, ' ');
-    
-    // Hapus semua harakat & simbol Al-Quran (Waqf, Sajdah, dll)
-    // Range: \u0610-\u061A (Honorifics), \u064B-\u065F (Harakat), \u0670 (Superscript Alef), 
-    // \u06D6-\u06DC (Small High Signs), \u06DF-\u06E8 (Small High Signs), \u06EA-\u06ED (Small Low Signs)
-    normalized = normalized.replace(/[\u0610-\u061A\u064B-\u065F\u0670\u0671\u06D6-\u06DC\u06DF-\u06E8\u06EA-\u06ED]/g, ' ');
+    let normalized = text.trim().replace(/\s{2,}/g, ' ');
+    // Hapus semua harakat (Fatha, Damma, Kasra, Shadda, Sukun, Tanwin)
+    normalized = normalized.replace(/[\u064B-\u0652\u06D6-\u06ED\u0670\u0671\u0653\u0654\u0655]/g, '');
     
     // 2. Hapus tanda baca & karakter non-huruf Arab (termasuk Tatweel)
-    normalized = normalized.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()؟ـ]/g, " ");
-    
-    // Bersihkan spasi ganda hasil penggantian simbol tadi
-    normalized = normalized.replace(/\s{2,}/g, ' ');
+    normalized = normalized.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()؟ـ]/g, "");
     
     // 3. Normalisasi Karakter (Alif, Ya, Ta Marbuta, Waw, Hamza)
     // Alif: أ, إ, آ, ٱ -> ا
@@ -312,26 +303,7 @@ export default function App() {
       normalized = normalized.replace(pattern, '');
     });
     
-    return normalized.trim().replace(/\s{2,}/g, ' ');
-  };
-
-  // Levenshtein Distance for "Pro" matching
-  const getLevenshteinDistance = (a: string, b: string): number => {
-    const matrix = Array.from({ length: a.length + 1 }, () => 
-      Array.from({ length: b.length + 1 }, (_, i) => i)
-    );
-    for (let i = 1; i <= a.length; i++) matrix[i][0] = i;
-    for (let i = 1; i <= a.length; i++) {
-      for (let j = 1; j <= b.length; j++) {
-        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j - 1] + cost
-        );
-      }
-    }
-    return matrix[a.length][b.length];
+    return normalized.trim();
   };
 
   const handleAnswerMultipleChoice = (selectedAnswer: string) => {
@@ -436,31 +408,21 @@ export default function App() {
         return;
       }
 
-      // 2. Levenshtein Distance Check (Pro System)
-      // Jika jarak edit sangat kecil dibanding panjang teks, anggap benar
-      const dist = getLevenshteinDistance(normalizedVoice, normalizedCorrect);
-      const maxLen = Math.max(normalizedVoice.length, normalizedCorrect.length);
-      const relativeError = dist / maxLen;
-      
-      if (relativeError < 0.2) { // Toleransi kesalahan 20% karakter
-        playDing();
-        setFeedback('correct');
-        setScore(prev => prev + 1);
-        return;
-      }
-
-      // 3. Inclusion & Fuzzy Word Matching
+      // 2. Inclusion & Fuzzy Word Matching
       const intersection = wordsVoice.filter(wv => wordsCorrect.some(wc => isFuzzyMatch(wv, wc)));
       const similarity = intersection.length / Math.max(wordsVoice.length, wordsCorrect.length);
       
       // Cek apakah semua kata kunci ada (dengan toleransi fuzzy)
       const allWordsPresent = wordsCorrect.every(wc => wordsVoice.some(wv => isFuzzyMatch(wv, wc)));
 
+      // Strictness check: User must have said at least as many words as the correct answer
+      const lengthCheck = wordsVoice.length >= wordsCorrect.length - 1;
+
       if (
-        (normalizedVoice.includes(normalizedCorrect)) || 
+        (normalizedVoice.includes(normalizedCorrect) && lengthCheck) || 
         tightVoice.includes(tightCorrect) ||
-        (allWordsPresent) ||
-        similarity > 0.6 // Balanced threshold
+        (allWordsPresent && lengthCheck) ||
+        similarity > 0.75 // Increased threshold for "benar dan sesuai"
       ) {
         playDing();
         setFeedback('correct');
