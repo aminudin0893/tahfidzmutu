@@ -144,10 +144,11 @@ export default function App() {
         translation: ayahsId[index].text 
       }));
       
-      setJuzData(mergedData);
+      const sortedData = mergedData.sort((a: any, b: any) => a.number - b.number);
+      setJuzData(sortedData);
       
       const surahMap = new Map();
-      mergedData.forEach((ayah: any) => {
+      sortedData.forEach((ayah: any) => {
         surahMap.set(ayah.surah.number, ALL_SURAHS[ayah.surah.number - 1]);
       });
       
@@ -194,6 +195,13 @@ export default function App() {
       return;
     }
 
+    if (!juzData || juzData.length === 0) {
+      alert("Data Al-Quran belum dimuat atau gagal dimuat. Silakan tunggu sebentar atau segarkan halaman.");
+      return;
+    }
+
+    const nQuestions = isNaN(numQuestions) || numQuestions <= 0 ? 5 : numQuestions;
+
     let pool = juzData;
     if (selectedSurah !== "all") {
       pool = juzData.filter(ayah => ayah.surah.number === parseInt(selectedSurah));
@@ -212,13 +220,13 @@ export default function App() {
       });
     }
 
-    if (validPrompts.length < numQuestions) {
+    if (validPrompts.length < nQuestions) {
       alert(`Hanya ada ${validPrompts.length} kemungkinan soal di target ini. Mohon kurangi jumlah soal.`);
       return;
     }
 
     const shuffled = [...validPrompts].sort(() => 0.5 - Math.random());
-    const selectedPrompts = shuffled.slice(0, numQuestions);
+    const selectedPrompts = shuffled.slice(0, nQuestions);
 
     let numDistractors = 3; 
     if (difficulty === 'mudah') numDistractors = 2; 
@@ -607,6 +615,15 @@ export default function App() {
   );
 
   const renderPlaying = () => {
+    if (!questions || questions.length === 0 || !questions[currentIndex]) {
+      return (
+        <div className="max-w-3xl mx-auto p-10 text-center bg-white rounded-3xl shadow-xl">
+          <RefreshCcw className="w-12 h-12 mx-auto mb-4 text-amber-500 animate-spin" />
+          <p className="text-slate-600 font-bold">Menyiapkan soal...</p>
+          <button onClick={() => setStep('setup')} className="mt-4 text-blue-600 underline">Kembali ke Pengaturan</button>
+        </div>
+      );
+    }
     const currentQ = questions[currentIndex];
     const progressPercent = ((currentIndex) / questions.length) * 100;
     
@@ -1028,6 +1045,12 @@ export default function App() {
             onClick={() => {
               setStep('setup');
               setShowAlhamdulillah(false);
+              setQuestions([]);
+              setCurrentIndex(0);
+              setScore(0);
+              setFeedback(null);
+              setTranscript('');
+              setIsPlayingAudio(false);
             }}
             className="w-full bg-blue-900 text-white py-4 rounded-2xl font-black hover:bg-blue-800 transition-all shadow-lg shadow-blue-900/20 flex items-center justify-center gap-3 text-lg border-b-4 border-blue-950 active:border-b-0 active:translate-y-1"
           >
