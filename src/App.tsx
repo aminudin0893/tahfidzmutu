@@ -97,7 +97,7 @@ export default function App() {
       const rec = new SpeechRecognition();
       rec.continuous = false;
       rec.interimResults = false;
-      rec.maxAlternatives = 10;
+      rec.maxAlternatives = 3;
       rec.lang = 'ar-SA'; // Default to Arabic for Lanjut Ayat
       
       rec.onresult = (event: any) => {
@@ -271,16 +271,15 @@ export default function App() {
     
     // 1. Dasar: Hapus harakat/diakritik & spasi berlebih
     let normalized = text.trim().replace(/\s{2,}/g, ' ');
-    // Hapus semua harakat (Fatha, Damma, Kasra, Shadda, Sukun, Tanwin)
-    normalized = normalized.replace(/[\u064B-\u0652\u06D6-\u06ED\u0670\u0671\u0653\u0654\u0655]/g, '');
+    normalized = normalized.replace(/[\u064B-\u0652\u06D6-\u06ED\u0670]/g, '');
     
-    // 2. Hapus tanda baca & karakter non-huruf Arab (termasuk Tatweel)
+    // 2. Hapus tanda baca & karakter non-huruf Arab
     normalized = normalized.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()؟ـ]/g, "");
     
     // 3. Normalisasi Karakter (Alif, Ya, Ta Marbuta, Waw, Hamza)
-    // Alif: أ, إ, آ, ٱ -> ا
-    normalized = normalized.replace(/[أإآٱ]/g, 'ا');
-    // Ya/Alif Maqsura: ي, ى -> ي
+    // Alif: أ, إ, آ -> ا
+    normalized = normalized.replace(/[أإآ]/g, 'ا');
+    // Ya/Alif Maqsura: ي, ى -> ي (Normalisasi ke satu bentuk)
     normalized = normalized.replace(/[يى]/g, 'ي');
     // Ta Marbuta: ة -> ه
     normalized = normalized.replace(/ة/g, 'ه');
@@ -288,16 +287,12 @@ export default function App() {
     normalized = normalized.replace(/ؤ/g, 'و');
     // Hamza on Chair: ئ -> ي
     normalized = normalized.replace(/ئ/g, 'ي');
-    // Hamza alone: ء -> (biasanya diabaikan dalam STT jika di akhir)
-    normalized = normalized.replace(/ء/g, '');
     
-    // 4. Menghapus Basmalah & Hamdalah di awal ayat jika ada (lebih agresif)
+    // 4. Menghapus Basmalah di awal ayat jika ada (lebih agresif)
     const basmalahPatterns = [
       /^بسم الله الرحمن الرحيم\s*/,
       /^بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\s*/,
-      /^بسم الله\s*/,
-      /^الحمد لله\s*/,
-      /^اعوذ بالله من الشيطان الرجيم\s*/
+      /^بسم الله\s*/
     ];
     basmalahPatterns.forEach(pattern => {
       normalized = normalized.replace(pattern, '');
@@ -380,27 +375,13 @@ export default function App() {
     const tightCorrect = normalizedCorrect.replace(/\s/g, '');
     const wordsCorrect = normalizedCorrect.split(/\s+/).filter(w => w.length > 0);
 
-    // Fungsi pembantu untuk fuzzy match kata (1 char diff allowed for long words)
-    const isFuzzyMatch = (w1: string, w2: string) => {
-      if (w1 === w2) return true;
-      if (Math.abs(w1.length - w2.length) > 1) return false;
-      if (w1.length < 4) return w1 === w2; // Kata pendek harus pas
-      
-      let diff = 0;
-      const len = Math.min(w1.length, w2.length);
-      for (let i = 0; i < len; i++) {
-        if (w1[i] !== w2[i]) diff++;
-      }
-      return diff <= 1;
-    };
-
     // Cek setiap alternatif hasil suara
     for (const voiceText of voiceTexts) {
       const normalizedVoice = normalizeArabic(voiceText);
       const tightVoice = normalizedVoice.replace(/\s/g, '');
       const wordsVoice = normalizedVoice.split(/\s+/).filter(w => w.length > 0);
 
-      // 1. Exact Match (Normal & Tight)
+      // 1. Exact Match
       if (normalizedVoice === normalizedCorrect || tightVoice === tightCorrect) {
         playDing();
         setFeedback('correct');
@@ -408,21 +389,18 @@ export default function App() {
         return;
       }
 
-      // 2. Inclusion & Fuzzy Word Matching
-      const intersection = wordsVoice.filter(wv => wordsCorrect.some(wc => isFuzzyMatch(wv, wc)));
+      // 2. Similarity & Inclusion
+      const intersection = wordsVoice.filter(w => wordsCorrect.includes(w));
       const similarity = intersection.length / Math.max(wordsVoice.length, wordsCorrect.length);
-      
-      // Cek apakah semua kata kunci ada (dengan toleransi fuzzy)
-      const allWordsPresent = wordsCorrect.every(wc => wordsVoice.some(wv => isFuzzyMatch(wv, wc)));
-
-      // Strictness check: User must have said at least as many words as the correct answer
-      const lengthCheck = wordsVoice.length >= wordsCorrect.length - 1;
+      const allWordsPresent = wordsCorrect.every(w => wordsVoice.includes(w));
 
       if (
-        (normalizedVoice.includes(normalizedCorrect) && lengthCheck) || 
+        normalizedVoice.includes(normalizedCorrect) || 
+        normalizedCorrect.includes(normalizedVoice) ||
         tightVoice.includes(tightCorrect) ||
-        (allWordsPresent && lengthCheck) ||
-        similarity > 0.75 // Increased threshold for "benar dan sesuai"
+        tightCorrect.includes(tightVoice) ||
+        allWordsPresent ||
+        similarity > 0.65
       ) {
         playDing();
         setFeedback('correct');
