@@ -271,6 +271,7 @@ export default function App() {
     setCurrentIndex(0);
     setFeedback(null);
     setTranscript('');
+    setTranscripts([]);
     setIsPlayingAudio(false);
     setStep('playing');
   };
@@ -433,6 +434,7 @@ export default function App() {
       setFeedback(null);
       setIsPlayingAudio(false);
       setTranscript('');
+      setTranscripts([]);
     } else {
       setStep('result');
     }
@@ -1050,6 +1052,7 @@ export default function App() {
               setScore(0);
               setFeedback(null);
               setTranscript('');
+              setTranscripts([]);
               setIsPlayingAudio(false);
             }}
             className="w-full bg-blue-900 text-white py-4 rounded-2xl font-black hover:bg-blue-800 transition-all shadow-lg shadow-blue-900/20 flex items-center justify-center gap-3 text-lg border-b-4 border-blue-950 active:border-b-0 active:translate-y-1"
