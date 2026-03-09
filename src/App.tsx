@@ -217,7 +217,7 @@ export default function App() {
       return;
     }
 
-    const shuffled = validPrompts.sort(() => 0.5 - Math.random());
+    const shuffled = [...validPrompts].sort(() => 0.5 - Math.random());
     const selectedPrompts = shuffled.slice(0, numQuestions);
 
     let numDistractors = 3; 
@@ -263,6 +263,7 @@ export default function App() {
     setCurrentIndex(0);
     setFeedback(null);
     setTranscript('');
+    setIsPlayingAudio(false);
     setStep('playing');
   };
 
