@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { GoogleGenAI, Type } from "@google/genai";
 import { 
   Play, Square, RefreshCcw, Download, CheckCircle, 
   XCircle, BookOpen, Award, User, Settings,
@@ -52,6 +53,7 @@ const playDing = () => {
 
 export default function App() {
   // --- States ---
+  const [mainTab, setMainTab] = useState('exam'); // 'exam' or 'quran'
   const [step, setStep] = useState('setup'); 
   
   // Setup State
@@ -75,6 +77,14 @@ export default function App() {
   const [juzData, setJuzData] = useState<any[]>([]);
   const [isFetching, setIsFetching] = useState(false);
   const [questions, setQuestions] = useState<any[]>([]);
+  
+  // Quran Menu State
+  const [quranSurah, setQuranSurah] = useState(1);
+  const [quranAyahs, setQuranAyahs] = useState<any[]>([]);
+  const [selectedAyahIdx, setSelectedAyahIdx] = useState(0);
+  const [quranFeedback, setQuranFeedback] = useState<{status: 'idle' | 'correct' | 'incorrect', text: string}>({status: 'idle', text: ''});
+  const [isQuranFetching, setIsQuranFetching] = useState(false);
+  const [isVerifyingAI, setIsVerifyingAI] = useState(false);
   
   // Playing State
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -177,10 +187,10 @@ export default function App() {
   }, [currentIndex, step, gameType, questions]);
 
   useEffect(() => {
-    if (step === 'playing' && gameType === 'lanjut_ayat_suara' && transcripts.length > 0 && !isListening) {
+    if (step === 'playing' && gameType === 'lanjut_ayat_suara' && transcripts.length > 0 && !isListening && !isVerifyingAI) {
       checkVoiceAnswerMulti(transcripts);
     }
-  }, [transcripts, isListening, step, gameType]);
+  }, [transcripts, isListening, step, gameType, isVerifyingAI]);
 
   useEffect(() => {
     if (step === 'playing' && difficulty === 'sulit' && !feedback) {
@@ -204,6 +214,31 @@ export default function App() {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [currentIndex, step, difficulty, feedback]);
+
+  useEffect(() => {
+    if (mainTab === 'quran') {
+      setIsQuranFetching(true);
+      fetch(`https://api.alquran.cloud/v1/surah/${quranSurah}/ar.alafasy`)
+        .then(res => res.json())
+        .then(data => {
+          setQuranAyahs(data.data.ayahs);
+          setSelectedAyahIdx(0);
+          setQuranFeedback({status: 'idle', text: ''});
+          setTranscript('');
+          setIsQuranFetching(false);
+        })
+        .catch(err => {
+          console.error("Gagal mengambil data Surah", err);
+          setIsQuranFetching(false);
+        });
+    }
+  }, [quranSurah, mainTab]);
+
+  useEffect(() => {
+    if (mainTab === 'quran' && transcripts.length > 0 && !isListening && !isVerifyingAI) {
+      checkQuranReading(transcripts);
+    }
+  }, [transcripts, isListening, mainTab, isVerifyingAI]);
 
   // --- Handlers ---
   
@@ -307,28 +342,25 @@ export default function App() {
     
     // 1. Dasar: Hapus harakat/diakritik & spasi berlebih
     let normalized = text.trim().replace(/\s{2,}/g, ' ');
-    normalized = normalized.replace(/[\u064B-\u0652\u06D6-\u06ED\u0670]/g, '');
+    // Regex lebih lengkap untuk semua tanda baca/diakritik Arab (Harakat, Tajweed marks, dll)
+    normalized = normalized.replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g, '');
     
-    // 2. Hapus tanda baca & karakter non-huruf Arab
-    normalized = normalized.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()؟ـ]/g, "");
+    // 2. Hapus tanda baca, angka, & karakter non-huruf Arab & Tatweel
+    normalized = normalized.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()؟ـ﴿﴾\d\u0660-\u0669]/g, "");
     
     // 3. Normalisasi Karakter (Alif, Ya, Ta Marbuta, Waw, Hamza)
-    // Alif: أ, إ, آ -> ا
     normalized = normalized.replace(/[أإآ]/g, 'ا');
-    // Ya/Alif Maqsura: ي, ى -> ي (Normalisasi ke satu bentuk)
     normalized = normalized.replace(/[يى]/g, 'ي');
-    // Ta Marbuta: ة -> ه
     normalized = normalized.replace(/ة/g, 'ه');
-    // Waw: ؤ -> و
     normalized = normalized.replace(/ؤ/g, 'و');
-    // Hamza on Chair: ئ -> ي
     normalized = normalized.replace(/ئ/g, 'ي');
     
     // 4. Menghapus Basmalah di awal ayat jika ada (lebih agresif)
     const basmalahPatterns = [
       /^بسم الله الرحمن الرحيم\s*/,
       /^بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\s*/,
-      /^بسم الله\s*/
+      /^بسم الله\s*/,
+      /^الم\s*/, // Kadang STT salah tangkap pembukaan
     ];
     basmalahPatterns.forEach(pattern => {
       normalized = normalized.replace(pattern, '');
@@ -404,14 +436,14 @@ export default function App() {
     }
   };
 
-  const checkVoiceAnswerMulti = (voiceTexts: string[]) => {
+  const checkVoiceAnswerMulti = async (voiceTexts: string[]) => {
     if (feedback) return;
     const currentQ = questions[currentIndex];
     const normalizedCorrect = normalizeArabic(currentQ.answerText);
     const tightCorrect = normalizedCorrect.replace(/\s/g, '');
     const wordsCorrect = normalizedCorrect.split(/\s+/).filter(w => w.length > 0);
 
-    // Cek setiap alternatif hasil suara
+    // Cek setiap alternatif hasil suara (Logika Cepat)
     for (const voiceText of voiceTexts) {
       const normalizedVoice = normalizeArabic(voiceText);
       const tightVoice = normalizedVoice.replace(/\s/g, '');
@@ -422,36 +454,183 @@ export default function App() {
         playDing();
         setFeedback('correct');
         setScore(prev => prev + 1);
+        setTranscripts([]);
         return;
       }
 
       // 2. Similarity & Inclusion
       const intersection = wordsVoice.filter(w => wordsCorrect.includes(w));
       const similarity = intersection.length / Math.max(wordsVoice.length, wordsCorrect.length);
-      const allWordsPresent = wordsCorrect.every(w => wordsVoice.includes(w));
+      
+      const wordsPresentCount = wordsCorrect.filter(w => wordsVoice.includes(w)).length;
+      const coverage = wordsPresentCount / wordsCorrect.length;
 
       if (
         normalizedVoice.includes(normalizedCorrect) || 
         normalizedCorrect.includes(normalizedVoice) ||
         tightVoice.includes(tightCorrect) ||
         tightCorrect.includes(tightVoice) ||
-        allWordsPresent ||
-        similarity > 0.65
+        similarity > 0.6 ||
+        coverage > 0.75
       ) {
         playDing();
         setFeedback('correct');
         setScore(prev => prev + 1);
+        setTranscripts([]);
         return;
       }
     }
 
-    // Jika tidak ada alternatif yang cocok
-    playBuzzer();
-    setFeedback('incorrect');
+    // Jika logika cepat gagal, gunakan Gemini AI (Logika Super Canggih)
+    setIsVerifyingAI(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `
+          Sebagai ahli Al-Quran profesional, verifikasi apakah bacaan pengguna (berdasarkan transkrip STT) sudah benar sesuai dengan ayat target.
+          Abaikan kesalahan kecil dari mesin Speech-to-Text (STT) atau variasi fonetik yang wajar.
+          
+          Ayat Target: "${currentQ.answerText}"
+          Transkrip Suara (STT): "${voiceTexts.join(' | ')}"
+          
+          Berikan jawaban dalam format JSON:
+          {
+            "isCorrect": boolean,
+            "feedback": string
+          }
+        `,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              isCorrect: { type: Type.BOOLEAN },
+              feedback: { type: Type.STRING }
+            },
+            required: ["isCorrect", "feedback"]
+          }
+        }
+      });
+
+      const result = JSON.parse(response.text || "{}");
+      
+      if (result.isCorrect) {
+        playDing();
+        setFeedback('correct');
+        setScore(prev => prev + 1);
+      } else {
+        playBuzzer();
+        setFeedback('incorrect');
+      }
+    } catch (error) {
+      console.error("AI Exam Verification error", error);
+      playBuzzer();
+      setFeedback('incorrect');
+    } finally {
+      setIsVerifyingAI(false);
+      setTranscripts([]);
+    }
   };
 
   const checkVoiceAnswer = (voiceText: string) => {
     checkVoiceAnswerMulti([voiceText]);
+  };
+
+  const checkQuranReading = async (voiceTexts: string[]) => {
+    const targetAyah = quranAyahs[selectedAyahIdx];
+    if (!targetAyah) return;
+
+    const normalizedCorrect = normalizeArabic(targetAyah.text);
+    const tightCorrect = normalizedCorrect.replace(/\s/g, '');
+    const wordsCorrect = normalizedCorrect.split(/\s+/).filter(w => w.length > 0);
+
+    for (const voiceText of voiceTexts) {
+      const normalizedVoice = normalizeArabic(voiceText);
+      const tightVoice = normalizedVoice.replace(/\s/g, '');
+      const wordsVoice = normalizedVoice.split(/\s+/).filter(w => w.length > 0);
+
+      // Metrik 1: Jaccard Similarity (Irisan kata)
+      const intersection = wordsVoice.filter(w => wordsCorrect.includes(w));
+      const similarity = intersection.length / Math.max(wordsVoice.length, wordsCorrect.length);
+      
+      // Metrik 2: Coverage (Berapa banyak kata benar yang ada di suara)
+      const wordsPresentCount = wordsCorrect.filter(w => wordsVoice.includes(w)).length;
+      const coverage = wordsPresentCount / wordsCorrect.length;
+
+      if (
+        normalizedVoice === normalizedCorrect || 
+        tightVoice === tightCorrect ||
+        normalizedVoice.includes(normalizedCorrect) ||
+        normalizedCorrect.includes(normalizedVoice) ||
+        similarity > 0.6 ||
+        coverage > 0.75
+      ) {
+        playDing();
+        setQuranFeedback({status: 'correct', text: voiceText});
+        setTranscripts([]);
+        return;
+      }
+    }
+
+    // Jika logika cepat gagal, gunakan "Super Advanced" Gemini AI untuk verifikasi profesional
+    setIsVerifyingAI(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `
+          Sebagai ahli Al-Quran profesional, verifikasi apakah bacaan pengguna (berdasarkan transkrip STT) sudah benar sesuai dengan ayat target.
+          Abaikan kesalahan kecil dari mesin Speech-to-Text (STT) atau variasi fonetik yang wajar.
+          
+          Ayat Target: "${targetAyah.text}"
+          Transkrip Suara (STT): "${voiceTexts.join(' | ')}"
+          
+          Berikan jawaban dalam format JSON:
+          {
+            "isCorrect": boolean,
+            "feedback": string (penjelasan singkat jika salah, atau pujian jika benar)
+          }
+        `,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              isCorrect: { type: Type.BOOLEAN },
+              feedback: { type: Type.STRING }
+            },
+            required: ["isCorrect", "feedback"]
+          }
+        }
+      });
+
+      const result = JSON.parse(response.text || "{}");
+      
+      if (result.isCorrect) {
+        playDing();
+        setQuranFeedback({status: 'correct', text: voiceTexts[0]});
+      } else {
+        playBuzzer();
+        setQuranFeedback({status: 'incorrect', text: voiceTexts[0]});
+        if (targetAyah.audio) {
+          const audio = new Audio(targetAyah.audio);
+          audio.play();
+        }
+      }
+    } catch (error) {
+      console.error("AI Verification error", error);
+      // Fallback ke incorrect jika AI gagal
+      playBuzzer();
+      setQuranFeedback({status: 'incorrect', text: voiceTexts[0]});
+      if (targetAyah.audio) {
+        const audio = new Audio(targetAyah.audio);
+        audio.play();
+      }
+    } finally {
+      setIsVerifyingAI(false);
+      setTranscripts([]);
+    }
   };
 
   const handleNext = () => {
@@ -486,12 +665,29 @@ export default function App() {
           PROGRAM UNGGULAN<span className="text-amber-400"> TAHFIDZ</span>
         </h1>
         <p className="text-blue-100 mt-3 text-sm sm:text-base font-medium relative z-10 max-w-md mx-auto">
-          Platform interaktif modern SMP Muhammadiyah 1 Probolinggo untuk menguji dan memperkuat hafalan Al-Qur'an Kamu.
+          SMP Muhammadiyah 1 Probolinggo
         </p>
       </div>
 
-      <form onSubmit={handleStart} className="p-6 sm:p-10 space-y-8 bg-white">
-        {/* Identitas Section */}
+      {/* Tab Switcher - Compact & Responsive */}
+      <div className="flex border-b border-slate-100 bg-slate-50/50 p-1.5 gap-1.5">
+        <button 
+          onClick={() => setMainTab('exam')}
+          className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 ${mainTab === 'exam' ? 'bg-white text-blue-900 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+        >
+          <Award className="w-4 h-4" /> Ujian
+        </button>
+        <button 
+          onClick={() => setMainTab('quran')}
+          className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 ${mainTab === 'quran' ? 'bg-white text-blue-900 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+        >
+          <Book className="w-4 h-4" /> Al-Quran AI
+        </button>
+      </div>
+
+      {mainTab === 'exam' ? (
+        <form onSubmit={handleStart} className="p-6 sm:p-10 space-y-8 bg-white">
+          {/* Identitas Section */}
         <div className="space-y-4">
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
              Profil Peserta
@@ -639,7 +835,142 @@ export default function App() {
         >
           {isFetching ? <RefreshCcw className="w-6 h-6 animate-spin" /> : "Mulai Uji Kemampuan"}
         </button>
-      </form>
+        </form>
+      ) : (
+        <div className="p-6 sm:p-10 space-y-8 bg-white">
+          <div className="space-y-4">
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pilih Surah</h3>
+            <select 
+              value={quranSurah} onChange={e => setQuranSurah(parseInt(e.target.value))}
+              className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-slate-800 font-bold outline-none focus:border-amber-400 transition-all text-sm"
+            >
+              {ALL_SURAHS.map((name, i) => (
+                <option key={i+1} value={i+1}>{i+1}. {name}</option>
+              ))}
+            </select>
+          </div>
+
+          {isQuranFetching ? (
+            <div className="py-20 text-center">
+              <RefreshCcw className="w-10 h-10 animate-spin mx-auto text-amber-500 mb-4" />
+              <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Memuat Ayat...</p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Baca & Koreksi AI</h3>
+                <div className="flex gap-2">
+                  <button 
+                    disabled={selectedAyahIdx === 0}
+                    onClick={() => {setSelectedAyahIdx(prev => prev - 1); setQuranFeedback({status: 'idle', text: ''}); setTranscript('');}}
+                    className="p-1.5 rounded-lg bg-slate-100 text-slate-600 disabled:opacity-30 hover:bg-slate-200 transition-colors"
+                  >
+                    <RefreshCcw className="w-3.5 h-3.5 rotate-180" />
+                  </button>
+                  <span className="bg-blue-50 text-blue-900 px-2.5 py-1 rounded-lg text-[10px] font-black flex items-center">
+                    Ayat {selectedAyahIdx + 1} / {quranAyahs.length}
+                  </span>
+                  <button 
+                    disabled={selectedAyahIdx === quranAyahs.length - 1}
+                    onClick={() => {setSelectedAyahIdx(prev => prev + 1); setQuranFeedback({status: 'idle', text: ''}); setTranscript('');}}
+                    className="p-1.5 rounded-lg bg-slate-100 text-slate-600 disabled:opacity-30 hover:bg-slate-200 transition-colors"
+                  >
+                    <RefreshCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-8 sm:p-12 bg-gradient-to-b from-slate-50 to-white rounded-[2.5rem] border border-slate-100 shadow-inner text-center relative group">
+                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                   <button 
+                     onClick={() => {
+                       const audio = new Audio(quranAyahs[selectedAyahIdx]?.audio);
+                       audio.play();
+                     }}
+                     className="p-2 bg-white rounded-full shadow-sm border border-slate-100 text-blue-600 hover:text-blue-800"
+                   >
+                     <Volume2 className="w-5 h-5" />
+                   </button>
+                </div>
+                <p className="text-4xl sm:text-5xl font-arabic text-slate-800 leading-[2.2] drop-shadow-sm" dir="rtl">
+                  {quranAyahs[selectedAyahIdx]?.text}
+                </p>
+              </div>
+
+              <div className="flex flex-col items-center gap-5 py-2">
+                <div className="relative">
+                  {isListening && (
+                    <div className="absolute inset-0 -m-4 flex items-center justify-center">
+                      <div className="w-full h-full rounded-full border-4 border-blue-500/30 animate-ping"></div>
+                    </div>
+                  )}
+                  <button 
+                    onClick={startListening}
+                    disabled={isListening || isVerifyingAI}
+                    className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl border-b-8 active:border-b-0 active:translate-y-2 relative z-10 transition-all ${isVerifyingAI ? 'bg-amber-500 border-amber-700' : isListening ? 'bg-blue-500 border-blue-700' : 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 hover:scale-105'} text-white`}
+                  >
+                    {isVerifyingAI ? <RefreshCcw className="w-9 h-9 animate-spin" /> : <Mic className={`w-9 h-9 ${isListening ? 'animate-pulse' : ''}`} />}
+                  </button>
+                </div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">
+                  {isVerifyingAI ? "AI Sedang Memverifikasi..." : isListening ? "Mendengarkan Bacaan..." : "Ketuk Mikrofon & Mulai Membaca"}
+                </p>
+
+                {isVerifyingAI && (
+                  <div className="flex items-center gap-2 bg-amber-50 px-4 py-2 rounded-full border border-amber-100 animate-pulse">
+                    <RefreshCcw className="w-3 h-3 animate-spin text-amber-600" />
+                    <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Analisis AI Profesional...</span>
+                  </div>
+                )}
+
+                {transcript && isListening && (
+                  <div className="mt-2 p-4 bg-blue-50 rounded-2xl border border-blue-100 animate-pulse">
+                    <p className="font-arabic text-2xl text-blue-900 text-center" dir="rtl">{transcript}</p>
+                  </div>
+                )}
+              </div>
+
+              {quranFeedback.status !== 'idle' && (
+                <div className={`p-6 rounded-3xl border-2 animate-in fade-in slide-in-from-bottom-4 ${quranFeedback.status === 'correct' ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
+                  <div className="flex items-start gap-4">
+                    <div className={`p-2.5 rounded-full flex-shrink-0 ${quranFeedback.status === 'correct' ? 'bg-emerald-200 text-emerald-600' : 'bg-rose-200 text-rose-600'}`}>
+                      {quranFeedback.status === 'correct' ? <CheckCircle className="w-6 h-6" /> : <XCircle className="w-6 h-6" />}
+                    </div>
+                    <div className="flex-1">
+                      <p className={`text-sm font-black ${quranFeedback.status === 'correct' ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {quranFeedback.status === 'correct' ? 'Bacaan Benar! Mumtaz.' : 'Ada Kesalahan pada Bacaan.'}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1.5 font-medium leading-relaxed">
+                        Hasil Suara: <span className="font-arabic text-xl text-slate-800" dir="rtl">{quranFeedback.text}</span>
+                      </p>
+                      
+                      {quranFeedback.status === 'incorrect' && (
+                        <div className="mt-4 p-3 bg-white rounded-xl border border-rose-100 flex items-center gap-3">
+                          <div className="w-8 h-8 bg-rose-100 rounded-full flex items-center justify-center text-rose-600">
+                            <Volume2 className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Contoh Koreksi</p>
+                            <p className="text-[10px] text-slate-400 font-medium">Audio diputar otomatis sebagai contoh</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {quranFeedback.status === 'correct' && selectedAyahIdx < quranAyahs.length - 1 && (
+                    <button 
+                      onClick={() => {setSelectedAyahIdx(prev => prev + 1); setQuranFeedback({status: 'idle', text: ''}); setTranscript('');}}
+                      className="w-full mt-4 py-3.5 bg-emerald-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-md shadow-emerald-200"
+                    >
+                      Lanjut Ayat Berikutnya
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -893,21 +1224,23 @@ export default function App() {
                     </div>
                   )}
                   <button 
-                    disabled={feedback !== null || isListening}
+                    disabled={feedback !== null || isListening || isVerifyingAI}
                     onClick={startListening}
                     className={`w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl border-b-8 active:border-b-0 active:translate-y-2 relative z-10 ${
-                      isListening 
-                        ? 'bg-rose-500 border-rose-700' 
-                        : 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 hover:from-emerald-400 hover:to-emerald-500'
+                      isVerifyingAI
+                        ? 'bg-amber-500 border-amber-700'
+                        : isListening 
+                          ? 'bg-rose-500 border-rose-700' 
+                          : 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 hover:from-emerald-400 hover:to-emerald-500'
                     } text-white`}
                   >
-                    <Mic className={`w-12 h-12 ${isListening ? 'animate-bounce' : ''}`} />
+                    {isVerifyingAI ? <RefreshCcw className="w-12 h-12 animate-spin" /> : <Mic className={`w-12 h-12 ${isListening ? 'animate-bounce' : ''}`} />}
                   </button>
                 </div>
                 
                 <div className="space-y-2">
-                  <p className={`text-sm font-bold uppercase tracking-widest ${isListening ? 'text-rose-500' : 'text-slate-400'}`}>
-                    {isListening ? "Mendengarkan..." : "Klik tombol di atas lalu bicara"}
+                  <p className={`text-sm font-bold uppercase tracking-widest ${isVerifyingAI ? 'text-amber-600' : isListening ? 'text-rose-500' : 'text-slate-400'}`}>
+                    {isVerifyingAI ? "AI Sedang Memverifikasi..." : isListening ? "Mendengarkan..." : "Klik tombol di atas lalu bicara"}
                   </p>
                   
                   {voiceError && (
