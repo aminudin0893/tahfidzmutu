@@ -107,18 +107,31 @@ export default function App() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
-      rec.continuous = false;
-      rec.interimResults = false;
+      rec.continuous = true;
+      rec.interimResults = true;
       rec.maxAlternatives = 3;
-      rec.lang = 'ar-SA'; // Default to Arabic for Lanjut Ayat
+      rec.lang = 'ar-SA';
       
       rec.onresult = (event: any) => {
-        const results = event.results[0];
-        const allTranscripts = Array.from(results).map((r: any) => r.transcript);
+        let finalTranscript = '';
+        let allAlternatives: string[] = [];
         
-        setTranscript(allTranscripts[0]); // Untuk tampilan UI
-        setTranscripts(allTranscripts);   // Untuk pengecekan akurasi
-        setIsListening(false);
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+            // Ambil alternatif dari hasil final terakhir
+            const alternatives = Array.from(event.results[i]).map((r: any) => r.transcript);
+            allAlternatives = [...new Set([...allAlternatives, ...alternatives])];
+          } else {
+            // Interim results untuk feedback visual
+            setTranscript(event.results[i][0].transcript);
+          }
+        }
+        
+        if (finalTranscript) {
+          setTranscript(prev => prev + ' ' + finalTranscript);
+          setTranscripts(prev => [...new Set([...prev, ...allAlternatives])]);
+        }
       };
       
       rec.onerror = (event: any) => {
@@ -421,7 +434,13 @@ export default function App() {
   };
 
   const startListening = () => {
-    if (recognition && !isListening) {
+    if (recognition) {
+      if (isListening) {
+        recognition.stop();
+        setIsListening(false);
+        return;
+      }
+      
       setTranscript('');
       setTranscripts([]);
       setVoiceError(null);
@@ -906,14 +925,14 @@ export default function App() {
                   )}
                   <button 
                     onClick={startListening}
-                    disabled={isListening || isVerifyingAI}
-                    className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl border-b-8 active:border-b-0 active:translate-y-2 relative z-10 transition-all ${isVerifyingAI ? 'bg-amber-500 border-amber-700' : isListening ? 'bg-blue-500 border-blue-700' : 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 hover:scale-105'} text-white`}
+                    disabled={isVerifyingAI}
+                    className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl border-b-8 active:border-b-0 active:translate-y-2 relative z-10 transition-all ${isVerifyingAI ? 'bg-amber-500 border-amber-700' : isListening ? 'bg-rose-500 border-rose-700' : 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 hover:scale-105'} text-white`}
                   >
-                    {isVerifyingAI ? <RefreshCcw className="w-9 h-9 animate-spin" /> : <Mic className={`w-9 h-9 ${isListening ? 'animate-pulse' : ''}`} />}
+                    {isVerifyingAI ? <RefreshCcw className="w-9 h-9 animate-spin" /> : isListening ? <Square className="w-9 h-9" /> : <Mic className="w-9 h-9" />}
                   </button>
                 </div>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">
-                  {isVerifyingAI ? "AI Sedang Memverifikasi..." : isListening ? "Mendengarkan Bacaan..." : "Ketuk Mikrofon & Mulai Membaca"}
+                  {isVerifyingAI ? "AI Sedang Memverifikasi..." : isListening ? "Membaca... Ketuk untuk Berhenti" : "Ketuk Mikrofon & Mulai Membaca"}
                 </p>
 
                 {isVerifyingAI && (
@@ -1224,7 +1243,7 @@ export default function App() {
                     </div>
                   )}
                   <button 
-                    disabled={feedback !== null || isListening || isVerifyingAI}
+                    disabled={feedback !== null || isVerifyingAI}
                     onClick={startListening}
                     className={`w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl border-b-8 active:border-b-0 active:translate-y-2 relative z-10 ${
                       isVerifyingAI
@@ -1234,13 +1253,13 @@ export default function App() {
                           : 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 hover:from-emerald-400 hover:to-emerald-500'
                     } text-white`}
                   >
-                    {isVerifyingAI ? <RefreshCcw className="w-12 h-12 animate-spin" /> : <Mic className={`w-12 h-12 ${isListening ? 'animate-bounce' : ''}`} />}
+                    {isVerifyingAI ? <RefreshCcw className="w-12 h-12 animate-spin" /> : isListening ? <Square className="w-12 h-12" /> : <Mic className="w-12 h-12" />}
                   </button>
                 </div>
                 
                 <div className="space-y-2">
                   <p className={`text-sm font-bold uppercase tracking-widest ${isVerifyingAI ? 'text-amber-600' : isListening ? 'text-rose-500' : 'text-slate-400'}`}>
-                    {isVerifyingAI ? "AI Sedang Memverifikasi..." : isListening ? "Mendengarkan..." : "Klik tombol di atas lalu bicara"}
+                    {isVerifyingAI ? "AI Sedang Memverifikasi..." : isListening ? "Membaca... Ketuk untuk Berhenti" : "Klik tombol di atas lalu bicara"}
                   </p>
                   
                   {voiceError && (
