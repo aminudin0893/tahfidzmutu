@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Play, Square, RefreshCcw, Download, CheckCircle, 
-  XCircle, BookOpen, Award, User, Settings, ChevronLeft,
+  XCircle, BookOpen, Award, User, Settings,
   List, LayoutGrid, Book, MessageSquare, Leaf, Zap, Flame, Mic, AlertCircle, Star, Volume2
 } from 'lucide-react';
 
@@ -174,10 +174,10 @@ export default function App() {
   }, [currentIndex, step, gameType, questions]);
 
   useEffect(() => {
-    if (step === 'playing' && gameType === 'lanjut_ayat_suara' && transcripts.length > 0 && !isListening && !feedback) {
+    if (step === 'playing' && gameType === 'lanjut_ayat_suara' && transcripts.length > 0 && !isListening) {
       checkVoiceAnswerMulti(transcripts);
     }
-  }, [transcripts, isListening, step, gameType, feedback]);
+  }, [transcripts, isListening, step, gameType]);
 
   // --- Handlers ---
   
@@ -336,6 +336,7 @@ export default function App() {
 
   const handleAnswerMultipleChoice = (selectedAnswer: string) => {
     if (feedback) return; 
+    
     const currentQ = questions[currentIndex];
     const normalizedSelected = normalizeArabic(selectedAnswer);
     const normalizedCorrect = normalizeArabic(currentQ.answerText);
@@ -681,23 +682,14 @@ export default function App() {
     };
 
     return (
-      <div className="max-w-3xl mx-auto bg-white rounded-[2.5rem] shadow-[0_20px_50px_-12px_rgba(30,58,138,0.15)] overflow-hidden border border-slate-100 relative">
+      <div className="max-w-3xl mx-auto bg-white rounded-[2.5rem] shadow-[0_20px_50px_-12px_rgba(30,58,138,0.15)] overflow-hidden border border-slate-100">
         
         {/* Modern Progress Header */}
         <div className="bg-white p-6 border-b border-slate-100">
           <div className="flex justify-between items-center mb-3">
-            <div className="flex items-center gap-3">
-              <button 
-                onClick={() => setStep('setup')}
-                className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400 hover:text-slate-600"
-                title="Kembali ke Menu"
-              >
-                <ChevronLeft className="w-6 h-6" />
-              </button>
-              <span className="text-slate-500 font-bold text-sm uppercase tracking-wider">
-                Soal {currentIndex + 1} <span className="text-slate-400 font-medium">dari {questions.length}</span>
-              </span>
-            </div>
+            <span className="text-slate-500 font-bold text-sm uppercase tracking-wider">
+              Soal {currentIndex + 1} <span className="text-slate-400 font-medium">dari {questions.length}</span>
+            </span>
             <div className="flex items-center gap-3">
               <div className="hidden sm:flex items-center gap-1.5 bg-rose-50 text-rose-600 border border-rose-100 py-1.5 px-4 rounded-full text-sm font-black shadow-sm">
                 <Flame className="w-4 h-4 fill-rose-500" />
@@ -988,26 +980,18 @@ export default function App() {
                      </div>
                   )}
                 </div>
+                <button 
+                  onClick={handleNext}
+                  className={`mt-4 sm:mt-0 w-full sm:w-auto px-8 py-4 rounded-2xl font-black transition-all border-b-4 active:border-b-0 active:translate-y-1 ${
+                    feedback === 'correct' 
+                      ? 'bg-blue-900 border-blue-950 hover:bg-blue-800 text-white' 
+                      : 'bg-rose-500 border-rose-600 hover:bg-rose-400 text-white'
+                  }`}
+                >
+                  {currentIndex < questions.length - 1 ? "Lanjut" : "Selesai"} 
+                </button>
               </div>
             </div>
-          )}
-
-          {/* STANDALONE NEXT BUTTON - Only appears after answering */}
-          {feedback && (
-            <button 
-              onClick={handleNext}
-              className={`w-full mt-6 py-5 rounded-2xl font-black transition-all border-b-4 active:border-b-0 active:translate-y-1 shadow-lg text-lg uppercase tracking-widest flex items-center justify-center gap-3 ${
-                feedback === 'correct' 
-                  ? 'bg-blue-900 border-blue-950 hover:bg-blue-800 text-white shadow-blue-900/20' 
-                  : 'bg-rose-500 border-rose-600 hover:bg-rose-400 text-white shadow-rose-500/20'
-              }`}
-            >
-              {currentIndex < questions.length - 1 ? (
-                <>Lanjut Ke Soal Berikutnya <RefreshCcw className="w-5 h-5" /></>
-              ) : (
-                <>Lihat Hasil Akhir <Award className="w-5 h-5" /></>
-              )} 
-            </button>
           )}
         </div>
       </div>
