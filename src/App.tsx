@@ -99,6 +99,7 @@ export default function App() {
   const [timeLeft, setTimeLeft] = useState(80);
 
   const audioRef = useRef<HTMLAudioElement>(null);
+  const isListeningRef = useRef(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- Effects ---
@@ -113,41 +114,54 @@ export default function App() {
       rec.lang = 'ar-SA';
       
       rec.onresult = (event: any) => {
-        let finalTranscript = '';
-        let allAlternatives: string[] = [];
+        let fullTranscript = '';
         
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
+        for (let i = 0; i < event.results.length; ++i) {
+          const transcriptPart = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-            // Ambil alternatif dari hasil final terakhir
-            const alternatives = Array.from(event.results[i]).map((r: any) => r.transcript);
-            allAlternatives = [...new Set([...allAlternatives, ...alternatives])];
+            fullTranscript += transcriptPart + ' ';
           } else {
             // Interim results untuk feedback visual
-            setTranscript(event.results[i][0].transcript);
+            setTranscript(fullTranscript + transcriptPart);
           }
         }
         
-        if (finalTranscript) {
-          setTranscript(prev => prev + ' ' + finalTranscript);
-          setTranscripts(prev => [...new Set([...prev, ...allAlternatives])]);
+        if (fullTranscript.trim()) {
+          const finalStr = fullTranscript.trim();
+          setTranscript(finalStr);
+          setTranscripts([finalStr]); 
         }
       };
       
       rec.onerror = (event: any) => {
         console.error("Speech recognition error", event.error);
-        setIsListening(false);
+        if (event.error !== 'no-speech') {
+          setIsListening(false);
+          isListeningRef.current = false;
+        }
+        
         if (event.error === 'network') {
           setVoiceError("Koneksi internet bermasalah atau layanan suara tidak tersedia. Pastikan internet stabil.");
         } else if (event.error === 'not-allowed') {
           setVoiceError("Izin mikrofon ditolak. Mohon izinkan akses mikrofon di browser Anda.");
-        } else {
+        } else if (event.error !== 'no-speech') {
           setVoiceError(`Terjadi kesalahan: ${event.error}`);
         }
       };
       
       rec.onend = () => {
-        setIsListening(false);
+        if (isListeningRef.current) {
+          // Jika masih dalam status listening tapi berhenti sendiri (silence timeout), restart
+          try {
+            rec.start();
+          } catch (e) {
+            console.error("Auto-restart error", e);
+            setIsListening(false);
+            isListeningRef.current = false;
+          }
+        } else {
+          setIsListening(false);
+        }
       };
       
       setRecognition(rec);
@@ -436,6 +450,7 @@ export default function App() {
   const startListening = () => {
     if (recognition) {
       if (isListening) {
+        isListeningRef.current = false;
         recognition.stop();
         setIsListening(false);
         return;
@@ -443,13 +458,16 @@ export default function App() {
       
       setTranscript('');
       setTranscripts([]);
+      setQuranFeedback({status: 'idle', text: ''});
       setVoiceError(null);
       setIsListening(true);
+      isListeningRef.current = true;
       try {
         recognition.start();
       } catch (e) {
         console.error("Recognition start error", e);
         setIsListening(false);
+        isListeningRef.current = false;
         setVoiceError("Gagal memulai perekaman. Coba segarkan halaman.");
       }
     }
@@ -942,11 +960,7 @@ export default function App() {
                   </div>
                 )}
 
-                {transcript && isListening && (
-                  <div className="mt-2 p-4 bg-blue-50 rounded-2xl border border-blue-100 animate-pulse">
-                    <p className="font-arabic text-2xl text-blue-900 text-center" dir="rtl">{transcript}</p>
-                  </div>
-                )}
+                {/* Transcript hidden as per user request */}
               </div>
 
               {quranFeedback.status !== 'idle' && (
@@ -958,9 +972,6 @@ export default function App() {
                     <div className="flex-1">
                       <p className={`text-sm font-black ${quranFeedback.status === 'correct' ? 'text-emerald-700' : 'text-rose-700'}`}>
                         {quranFeedback.status === 'correct' ? 'Bacaan Benar! Mumtaz.' : 'Ada Kesalahan pada Bacaan.'}
-                      </p>
-                      <p className="text-xs text-slate-500 mt-1.5 font-medium leading-relaxed">
-                        Hasil Suara: <span className="font-arabic text-xl text-slate-800" dir="rtl">{quranFeedback.text}</span>
                       </p>
                       
                       {quranFeedback.status === 'incorrect' && (
@@ -1245,7 +1256,7 @@ export default function App() {
                   <button 
                     disabled={feedback !== null || isVerifyingAI}
                     onClick={startListening}
-                    className={`w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl border-b-8 active:border-b-0 active:translate-y-2 relative z-10 ${
+                    className={`w-24 h-24 sm:w-32 sm:h-32 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl border-b-8 active:border-b-0 active:translate-y-2 relative z-10 ${
                       isVerifyingAI
                         ? 'bg-amber-500 border-amber-700'
                         : isListening 
@@ -1253,7 +1264,7 @@ export default function App() {
                           : 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 hover:from-emerald-400 hover:to-emerald-500'
                     } text-white`}
                   >
-                    {isVerifyingAI ? <RefreshCcw className="w-12 h-12 animate-spin" /> : isListening ? <Square className="w-12 h-12" /> : <Mic className="w-12 h-12" />}
+                    {isVerifyingAI ? <RefreshCcw className="w-10 h-10 sm:w-12 sm:h-12 animate-spin" /> : isListening ? <Square className="w-10 h-10 sm:w-12 sm:h-12" /> : <Mic className="w-10 h-10 sm:w-12 sm:h-12" />}
                   </button>
                 </div>
                 
