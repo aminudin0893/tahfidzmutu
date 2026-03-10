@@ -9,7 +9,7 @@ import {
   Play, Square, RefreshCcw, Download, CheckCircle, 
   XCircle, BookOpen, Award, User, Settings,
   List, LayoutGrid, Book, MessageSquare, Leaf, Zap, Flame, Mic, AlertCircle, Star, Volume2,
-  Eye, EyeOff, Copy, Key, ChevronLeft, ChevronRight
+  Eye, EyeOff, Copy, Key, ChevronLeft, ChevronRight, Languages
 } from 'lucide-react';
 
 // --- Global Data untuk Distractor (Pilihan Salah) ---
@@ -1230,7 +1230,7 @@ export default function App() {
                         onMouseLeave={handleAyahPressEnd}
                         onTouchStart={() => handleAyahPressStart(ayah)}
                         onTouchEnd={handleAyahPressEnd}
-                        className={`cursor-pointer transition-all duration-500 rounded-xl px-2 py-1 ${
+                        className={`cursor-pointer transition-all duration-500 rounded-xl px-2 py-1 relative group/ayah ${
                           correctingIdx === globalIdx
                             ? 'bg-emerald-100 text-emerald-800 ring-4 ring-emerald-200 shadow-sm z-10' 
                             : selectedAyahIdx === globalIdx
@@ -1240,6 +1240,18 @@ export default function App() {
                               : 'hover:bg-slate-50 opacity-80'
                         }`}
                       >
+                        {/* Tombol Terjemah Kecil */}
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowTranslationAyah(ayah);
+                          }}
+                          className="absolute -top-2 -left-2 w-6 h-6 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all opacity-0 group-hover/ayah:opacity-100 shadow-sm z-20"
+                          title="Tampilkan Terjemah"
+                        >
+                          <Languages className="w-3 h-3" />
+                        </button>
+                        
                         {ayah.text} 
                         <span className="text-lg text-amber-500 mx-2 font-sans border border-amber-200 rounded-full w-8 h-8 inline-flex items-center justify-center bg-amber-50/50">
                           {ayah.numberInSurah}
