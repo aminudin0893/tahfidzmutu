@@ -87,6 +87,7 @@ export default function App() {
   const [quranFeedback, setQuranFeedback] = useState<{status: 'idle' | 'correct' | 'incorrect', text: string, aiFeedback?: string}>({status: 'idle', text: ''});
   const [isQuranFetching, setIsQuranFetching] = useState(false);
   const [isVerifyingAI, setIsVerifyingAI] = useState(false);
+  const [isVoiceAnalysisEnabled, setIsVoiceAnalysisEnabled] = useState(true);
   
   // Playing State
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -114,6 +115,20 @@ export default function App() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- Effects ---
+  useEffect(() => {
+    // Reset loading and listening states when switching tabs or game modes
+    setIsVerifyingAI(false);
+    setIsListening(false);
+    if (recognition) {
+      try {
+        recognition.stop();
+      } catch (e) {}
+    }
+    isListeningRef.current = false;
+    setTranscripts([]);
+    setTranscript('');
+  }, [mainTab, step, gameType]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setShowSplash(false);
@@ -277,10 +292,18 @@ export default function App() {
   }, [quranSurah, mainTab]);
 
   useEffect(() => {
-    if (mainTab === 'quran' && transcripts.length > 0 && !isListening && !isVerifyingAI) {
+    if (mainTab === 'quran' && transcripts.length > 0 && !isListening && !isVerifyingAI && isVoiceAnalysisEnabled) {
       checkQuranReading(transcripts);
     }
-  }, [transcripts, isListening, mainTab, isVerifyingAI]);
+  }, [transcripts, isListening, mainTab, isVerifyingAI, isVoiceAnalysisEnabled]);
+
+  useEffect(() => {
+    if (!isVoiceAnalysisEnabled) {
+      setQuranFeedback({status: 'idle', text: ''});
+      setTranscripts([]);
+      setTranscript('');
+    }
+  }, [isVoiceAnalysisEnabled]);
 
   // --- Handlers ---
   
@@ -580,7 +603,9 @@ export default function App() {
     setIsVerifyingAI(true);
     try {
       const ai = new GoogleGenAI({ apiKey: customApiKey || process.env.GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
+      
+      // Add timeout to AI call to prevent infinite loading
+      const aiPromise = ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `
           Verifikasi ketat bacaan Al-Quran.
@@ -608,6 +633,12 @@ export default function App() {
         }
       });
 
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("AI Timeout")), 15000)
+      );
+
+      const response: any = await Promise.race([aiPromise, timeoutPromise]);
+      
       let result = { isCorrect: false, feedback: "Gagal memproses analisis." };
       try {
         result = JSON.parse(response.text || "{}");
@@ -630,8 +661,17 @@ export default function App() {
       }
     } catch (error) {
       console.error("AI Exam Verification error", error);
-      playBuzzer();
-      setFeedback('incorrect');
+      // Fallback simple check on error
+      const normalizedVoice = normalizeArabic(voiceTexts[0]);
+      const normalizedCorrect = normalizeArabic(currentQ.answerText);
+      if (normalizedVoice.includes(normalizedCorrect) || normalizedCorrect.includes(normalizedVoice)) {
+        playDing();
+        setFeedback('correct');
+        setScore(prev => prev + 1);
+      } else {
+        playBuzzer();
+        setFeedback('incorrect');
+      }
     } finally {
       setIsVerifyingAI(false);
       setTranscripts([]);
@@ -654,17 +694,19 @@ export default function App() {
     setIsVerifyingAI(true);
     try {
       const ai = new GoogleGenAI({ apiKey: customApiKey || process.env.GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
+      
+      // Add timeout to AI call to prevent infinite loading
+      const aiPromise = ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `
-          Analisis tajwid ketat & cepat.
+          Analisis tajwid & pengucapan (Makharijul Huruf) secara mendalam.
           Ayat: "${targetAyah.text}"
           User: "${voiceTexts.join(' | ')}"
           
           INSTRUKSI:
           1. Verifikasi ketat (isCorrect: true jika akurasi > 85%).
-          2. Jika benar: Sebutkan hukum tajwid yang tepat (Ikhfa, Mad, dll) & lokasinya.
-          3. Jika salah: Tunjukkan kata yang salah/kurang secara spesifik.
+          2. Jika benar: Berikan pujian "Suara anda terdengar sangat baik, aplikasi sudah siap untuk digunakan." lalu sebutkan hukum tajwid yang tepat (Ikhfa, Mad, dll) & lokasinya.
+          3. Jika salah: Tunjukkan kata yang salah/kurang secara spesifik dari sisi makhraj atau tajwid.
           4. Gunakan EYD & poin nomor (1., 2.).
           
           Berikan jawaban JSON:
@@ -683,6 +725,12 @@ export default function App() {
         }
       });
 
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("AI Timeout")), 15000)
+      );
+
+      const response: any = await Promise.race([aiPromise, timeoutPromise]);
+      
       let result = { isCorrect: false, feedback: "Gagal memproses analisis." };
       try {
         result = JSON.parse(response.text || "{}");
@@ -691,7 +739,7 @@ export default function App() {
         const normalizedVoice = normalizeArabic(voiceTexts[0]);
         const normalizedCorrect = normalizeArabic(targetAyah.text);
         if (normalizedVoice.includes(normalizedCorrect) || normalizedCorrect.includes(normalizedVoice)) {
-          result = { isCorrect: true, feedback: "Bacaan terdeteksi benar (Fallback)." };
+          result = { isCorrect: true, feedback: "Suara anda terdengar sangat baik, aplikasi sudah siap untuk digunakan. Bacaan terdeteksi benar (Fallback)." };
         }
       }
       
@@ -708,11 +756,19 @@ export default function App() {
       }
     } catch (error) {
       console.error("AI Verification error", error);
-      playBuzzer();
-      setQuranFeedback({status: 'incorrect', text: voiceTexts[0], aiFeedback: "Gagal melakukan analisis AI. Silakan coba lagi."});
-      if (targetAyah.audio) {
-        const audio = new Audio(targetAyah.audio);
-        audio.play();
+      // Fallback simple check on error
+      const normalizedVoice = normalizeArabic(voiceTexts[0]);
+      const normalizedCorrect = normalizeArabic(targetAyah.text);
+      if (normalizedVoice.includes(normalizedCorrect) || normalizedCorrect.includes(normalizedVoice)) {
+        playDing();
+        setQuranFeedback({status: 'correct', text: voiceTexts[0], aiFeedback: "Suara anda terdengar sangat baik, aplikasi sudah siap untuk digunakan. Bacaan terdeteksi benar (Fallback)."});
+      } else {
+        playBuzzer();
+        setQuranFeedback({status: 'incorrect', text: voiceTexts[0], aiFeedback: "Gagal melakukan analisis AI atau waktu habis. Silakan coba lagi."});
+        if (targetAyah.audio) {
+          const audio = new Audio(targetAyah.audio);
+          audio.play();
+        }
       }
     } finally {
       setIsVerifyingAI(false);
@@ -978,6 +1034,32 @@ export default function App() {
         </form>
       ) : (
         <div className="p-6 sm:p-10 space-y-8 bg-white">
+          {/* Welcome Message for Voice Feature */}
+          {isVoiceAnalysisEnabled && (
+            <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+              <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white shadow-sm">
+                <Mic className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Fitur Uji Bacaan Aktif</p>
+                <p className="text-xs text-blue-800 font-medium">Suara anda terdengar sangat baik, aplikasi sudah siap untuk digunakan.</p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-100">
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mode Uji Coba Suara</p>
+              <p className="text-xs text-slate-600 font-bold">{isVoiceAnalysisEnabled ? 'Aktif (AI Menganalisis)' : 'Nonaktif (Baca Mandiri)'}</p>
+            </div>
+            <button 
+              onClick={() => setIsVoiceAnalysisEnabled(!isVoiceAnalysisEnabled)}
+              className={`w-12 h-6 rounded-full transition-all duration-300 relative ${isVoiceAnalysisEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
+            >
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300 ${isVoiceAnalysisEnabled ? 'left-7' : 'left-1'}`}></div>
+            </button>
+          </div>
+
           <div className="space-y-4">
             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pilih Surah</h3>
             <select 
@@ -1038,29 +1120,40 @@ export default function App() {
               </div>
 
               <div className="flex flex-col items-center gap-5 py-2">
-                <div className="relative">
-                  {isListening && (
-                    <div className="absolute inset-0 -m-4 flex items-center justify-center">
-                      <div className="w-full h-full rounded-full border-4 border-blue-500/30 animate-ping"></div>
-                    </div>
-                  )}
-                  <button 
-                    onClick={startListening}
-                    disabled={isVerifyingAI}
-                    className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl border-b-8 active:border-b-0 active:translate-y-2 relative z-10 transition-all ${isVerifyingAI ? 'bg-amber-500 border-amber-700' : isListening ? 'bg-rose-500 border-rose-700' : 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 hover:scale-105'} text-white`}
-                  >
-                    {isVerifyingAI ? <RefreshCcw className="w-9 h-9 animate-spin" /> : isListening ? <Square className="w-9 h-9" /> : <Mic className="w-9 h-9" />}
-                  </button>
-                </div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">
-                  {isVerifyingAI ? "AI Sedang Memverifikasi..." : isListening ? "Membaca... Ketuk untuk Berhenti" : "Ketuk Mikrofon & Mulai Membaca"}
-                </p>
-
-                {isVerifyingAI && (
-                  <div className="flex items-center gap-2 bg-amber-50 px-4 py-2 rounded-full border border-amber-100 animate-pulse">
-                    <RefreshCcw className="w-3 h-3 animate-spin text-amber-600" />
-                    <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Analisis AI Profesional...</span>
+                {isVoiceAnalysisEnabled ? (
+                  <div className="relative">
+                    {isListening && (
+                      <div className="absolute inset-0 -m-4 flex items-center justify-center">
+                        <div className="w-full h-full rounded-full border-4 border-blue-500/30 animate-ping"></div>
+                      </div>
+                    )}
+                    <button 
+                      onClick={startListening}
+                      disabled={isVerifyingAI}
+                      className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl border-b-8 active:border-b-0 active:translate-y-2 relative z-10 transition-all ${isVerifyingAI ? 'bg-amber-500 border-amber-700' : isListening ? 'bg-rose-500 border-rose-700' : 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 hover:scale-105'} text-white`}
+                    >
+                      {isVerifyingAI ? <RefreshCcw className="w-9 h-9 animate-spin" /> : isListening ? <Square className="w-9 h-9" /> : <Mic className="w-9 h-9" />}
+                    </button>
                   </div>
+                ) : (
+                  <div className="text-center py-4 px-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Mode Baca Mandiri</p>
+                    <p className="text-[10px] text-slate-400">Gunakan tombol navigasi untuk berpindah ayat</p>
+                  </div>
+                )}
+                {isVoiceAnalysisEnabled && (
+                  <>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">
+                      {isVerifyingAI ? "AI Sedang Memverifikasi..." : isListening ? "Membaca... Ketuk untuk Berhenti" : "Ketuk Mikrofon & Mulai Membaca"}
+                    </p>
+
+                    {isVerifyingAI && (
+                      <div className="flex items-center gap-2 bg-amber-50 px-4 py-2 rounded-full border border-amber-100 animate-pulse">
+                        <RefreshCcw className="w-3 h-3 animate-spin text-amber-600" />
+                        <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Analisis AI Profesional...</span>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Transcript hidden as per user request */}
