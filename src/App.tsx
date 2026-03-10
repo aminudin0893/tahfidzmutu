@@ -55,6 +55,7 @@ export default function App() {
   // --- States ---
   const [mainTab, setMainTab] = useState('exam'); // 'exam' or 'quran'
   const [step, setStep] = useState('setup'); 
+  const [showSplash, setShowSplash] = useState(true);
   
   // Setup State
   const [studentName, setStudentName] = useState('');
@@ -103,6 +104,13 @@ export default function App() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- Effects ---
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
     // Initialize Speech Recognition
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -1463,6 +1471,38 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4 sm:px-6 font-sans selection:bg-amber-200 selection:text-blue-950">
+      {showSplash && (
+        <div className="fixed inset-0 z-[100] bg-blue-950 flex flex-col items-center justify-center p-6 text-center overflow-hidden">
+          {/* Background Pattern */}
+          <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/arabesque.png')]"></div>
+          
+          {/* Animated Circles */}
+          <div className="absolute w-[300px] h-[300px] sm:w-[500px] sm:h-[500px] bg-blue-500/20 rounded-full blur-3xl animate-pulse"></div>
+          <div className="absolute w-[200px] h-[200px] sm:w-[300px] sm:h-[300px] bg-amber-500/10 rounded-full blur-2xl animate-bounce" style={{ animationDuration: '3s' }}></div>
+
+          <div className="relative z-10 flex flex-col items-center animate-in fade-in zoom-in duration-1000">
+            <div className="bg-white/10 p-6 rounded-full backdrop-blur-md border border-white/20 mb-8 shadow-2xl animate-bounce" style={{ animationDuration: '2s' }}>
+              <BookOpen className="w-16 h-16 sm:w-20 sm:h-20 text-amber-400" />
+            </div>
+            
+            <h2 className="text-amber-400 text-[10px] sm:text-xs font-black uppercase tracking-[0.3em] mb-4 animate-in slide-in-from-bottom-4 duration-700 delay-300">
+              Ahlan wa Sahlan
+            </h2>
+            
+            <h1 className="text-white text-2xl sm:text-4xl md:text-5xl font-extrabold leading-tight max-w-2xl animate-in slide-in-from-bottom-8 duration-1000 delay-500">
+              Selamat datang di Aplikasi Tahfidz <br/>
+              <span className="text-amber-400">SMP Muhammadiyah 1 Probolinggo</span>
+            </h1>
+            
+            <div className="mt-12 flex gap-2">
+              <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+              <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+              <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce"></div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         .font-arabic { 
           font-family: 'Amiri Quran', serif; 
