@@ -83,7 +83,7 @@ export default function App() {
   const [quranSurah, setQuranSurah] = useState(1);
   const [quranAyahs, setQuranAyahs] = useState<any[]>([]);
   const [selectedAyahIdx, setSelectedAyahIdx] = useState(0);
-  const [quranFeedback, setQuranFeedback] = useState<{status: 'idle' | 'correct' | 'incorrect', text: string}>({status: 'idle', text: ''});
+  const [quranFeedback, setQuranFeedback] = useState<{status: 'idle' | 'correct' | 'incorrect', text: string, aiFeedback?: string}>({status: 'idle', text: ''});
   const [isQuranFetching, setIsQuranFetching] = useState(false);
   const [isVerifyingAI, setIsVerifyingAI] = useState(false);
   
@@ -406,15 +406,19 @@ export default function App() {
     normalized = normalized.replace(/ئ/g, 'ي');
     
     // 4. Menghapus Basmalah di awal ayat jika ada (lebih agresif)
+    // Kita tidak menghapus "الم" karena itu adalah bagian dari ayat
     const basmalahPatterns = [
-      /^بسم الله الرحمن الرحيم\s*/,
-      /^بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\s*/,
-      /^بسم الله\s*/,
-      /^الم\s*/, // Kadang STT salah tangkap pembukaan
+      /^بِسْمِ\s+اللَّهِ\s+الرَّحْمَٰنِ\s+الرَّحِيمِ\s*/,
+      /^بسم\s+الله\s+الرحمن\s+الرحيم\s*/,
+      /^بسم\s+الله\s*/,
     ];
     basmalahPatterns.forEach(pattern => {
       normalized = normalized.replace(pattern, '');
     });
+    
+    // 5. Normalisasi Fonetik Sederhana (untuk membantu STT)
+    normalized = normalized.replace(/ة/g, 'ه');
+    normalized = normalized.replace(/ى/g, 'ي');
     
     return normalized.trim();
   };
@@ -554,14 +558,16 @@ export default function App() {
           Sebagai ahli Al-Quran profesional dan pakar fonetik Arab, tugas Anda adalah memverifikasi apakah bacaan pengguna sudah benar sesuai dengan ayat target.
           
           PANDUAN VERIFIKASI PRO (TAHFIDZPRO ADVANCED):
-          1. Abaikan kesalahan teknis dari mesin Speech-to-Text (STT) seperti:
-             - Salah penulisan harakat (fathah/kasrah/dammah) yang sering terjadi di STT.
-             - Variasi penulisan huruf yang mirip (misal: alif mamdudah vs alif maqsurah).
-             - Kesalahan pemisahan kata yang tidak disengaja oleh mesin.
-             - Kesalahan fonetik yang wajar (misal: 'q' jadi 'k', 'th' jadi 't' karena keterbatasan mic).
-          2. Fokus pada substansi kata, urutan ayat, dan kelengkapan makna.
-          3. Jika transkrip STT mengandung setidaknya 65% kemiripan fonetik dengan ayat target, anggap BENAR.
-          4. Berikan toleransi tinggi terhadap kebisingan latar belakang atau kualitas audio yang rendah.
+          1. Abaikan Basmalah (Bismillah) di awal ayat jika pengguna tidak membacanya, atau jika STT tidak menangkapnya.
+          2. Abaikan kesalahan teknis dari mesin Speech-to-Text (STT) seperti:
+             - Salah penulisan harakat (fathah/kasrah/dammah).
+             - Variasi penulisan huruf yang mirip (misal: alif mamdudah vs alif maqsurah, ta marbutah vs ha).
+             - Kesalahan pemisahan atau penggabungan kata.
+             - Kesalahan fonetik (misal: 'q' jadi 'k', 'th' jadi 't', 's' jadi 'sh' atau sebaliknya).
+          3. Fokus pada substansi kata, urutan ayat, dan kelengkapan makna.
+          4. Jika transkrip STT mengandung setidaknya 60% kemiripan fonetik dengan ayat target, anggap BENAR.
+          5. Berikan toleransi sangat tinggi terhadap dialek dan kualitas audio.
+          6. Jika ayat mengandung Muqatta'at (seperti Alif Lam Mim), STT mungkin menuliskannya secara terpisah atau sebagai kata utuh, anggap benar jika bunyinya sesuai.
           
           Ayat Target: "${currentQ.answerText}"
           Transkrip Suara (STT): "${voiceTexts.join(' | ')}"
@@ -642,7 +648,11 @@ export default function App() {
         levSimilarity > 0.7
       ) {
         playDing();
-        setQuranFeedback({status: 'correct', text: voiceText});
+        setQuranFeedback({
+          status: 'correct', 
+          text: voiceText,
+          aiFeedback: "Bacaan Anda terdeteksi sangat akurat secara sistem. Teruskan hafalan Anda dengan memperhatikan makhraj dan tajwid yang lebih mendalam."
+        });
         setTranscripts([]);
         return;
       }
@@ -655,25 +665,23 @@ export default function App() {
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `
-          Sebagai ahli Al-Quran profesional dan pakar fonetik Arab, tugas Anda adalah memverifikasi apakah bacaan pengguna sudah benar sesuai dengan ayat target.
+          Sebagai ahli Al-Quran profesional dan pakar tajwid, tugas Anda adalah menganalisis bacaan pengguna dan memberikan masukan spesifik.
           
-          PANDUAN VERIFIKASI PRO (TAHFIDZPRO ADVANCED):
-          1. Abaikan kesalahan teknis dari mesin Speech-to-Text (STT) seperti:
-             - Salah penulisan harakat atau tanda baca.
-             - Variasi penulisan huruf yang mirip secara fonetik (misal: 'ha' vs 'kha', 'ta' vs 'tha').
-             - Kesalahan segmentasi kata oleh mesin STT.
-          2. Fokus pada kebenaran lafadz dan urutan kata.
-          3. Jika transkrip STT memiliki kemiripan fonetik yang kuat (minimal 65%) dengan ayat target, nyatakan BENAR.
-          4. Berikan toleransi tinggi terhadap keterbatasan teknologi STT dalam menangkap makhraj yang sempurna.
-          5. Jika pengguna membaca dengan benar namun STT salah menangkap beberapa kata, tetap nyatakan BENAR.
+          INSTRUKSI ANALISIS TAJWID:
+          1. Verifikasi kebenaran ayat target: "${targetAyah.text}"
+          2. Bandingkan dengan transkrip suara pengguna: "${voiceTexts.join(' | ')}"
+          3. Berikan analisis tajwid spesifik untuk ayat ini (misal: hukum Nun Mati/Tanwin, Mad, Qalqalah, dll yang ada pada ayat tersebut).
+          4. Berikan masukan apakah bacaan sudah benar atau ada yang perlu diperbaiki.
+          5. Gunakan bahasa yang memotivasi dan edukatif.
           
-          Ayat Target: "${targetAyah.text}"
-          Transkrip Suara (STT): "${voiceTexts.join(' | ')}"
+          PANDUAN VERIFIKASI:
+          - Jika kemiripan fonetik > 60%, nyatakan isCorrect: true.
+          - Meskipun benar, tetap berikan "feedback" berisi tips tajwid spesifik untuk ayat tersebut.
           
           Berikan jawaban dalam format JSON:
           {
             "isCorrect": boolean,
-            "feedback": string (Penjelasan singkat yang membangun dan tips tajwid)
+            "feedback": string (Analisis tajwid mendalam dan saran perbaikan)
           }
         `,
         config: {
@@ -693,10 +701,10 @@ export default function App() {
       
       if (result.isCorrect) {
         playDing();
-        setQuranFeedback({status: 'correct', text: voiceTexts[0]});
+        setQuranFeedback({status: 'correct', text: voiceTexts[0], aiFeedback: result.feedback});
       } else {
         playBuzzer();
-        setQuranFeedback({status: 'incorrect', text: voiceTexts[0]});
+        setQuranFeedback({status: 'incorrect', text: voiceTexts[0], aiFeedback: result.feedback});
         if (targetAyah.audio) {
           const audio = new Audio(targetAyah.audio);
           audio.play();
@@ -704,9 +712,8 @@ export default function App() {
       }
     } catch (error) {
       console.error("AI Verification error", error);
-      // Fallback ke incorrect jika AI gagal
       playBuzzer();
-      setQuranFeedback({status: 'incorrect', text: voiceTexts[0]});
+      setQuranFeedback({status: 'incorrect', text: voiceTexts[0], aiFeedback: "Gagal melakukan analisis AI. Silakan coba lagi."});
       if (targetAyah.audio) {
         const audio = new Audio(targetAyah.audio);
         audio.play();
@@ -1020,6 +1027,16 @@ export default function App() {
                       <p className={`text-sm font-black ${quranFeedback.status === 'correct' ? 'text-emerald-700' : 'text-rose-700'}`}>
                         {quranFeedback.status === 'correct' ? 'Bacaan Benar! Mumtaz.' : 'Ada Kesalahan pada Bacaan.'}
                       </p>
+                      
+                      {quranFeedback.aiFeedback && (
+                        <div className={`mt-3 p-4 rounded-2xl border text-xs leading-relaxed font-medium ${quranFeedback.status === 'correct' ? 'bg-white/50 border-emerald-100 text-emerald-800' : 'bg-white/50 border-rose-100 text-rose-800'}`}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <Zap className="w-3.5 h-3.5" />
+                            <span className="font-black uppercase tracking-widest text-[10px]">Analisis Tajwid AI</span>
+                          </div>
+                          {quranFeedback.aiFeedback}
+                        </div>
+                      )}
                       
                       {quranFeedback.status === 'incorrect' && (
                         <div className="mt-4 p-3 bg-white rounded-xl border border-rose-100 flex items-center gap-3">
