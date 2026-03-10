@@ -762,7 +762,7 @@ export default function App() {
           </h3>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {[
-              { id: 'lanjut_ayat', icon: List, label: "Lanjut Ayat (Teks)" },
+              { id: 'lanjut_ayat', icon: List, label: "Lanjut Ayat (Teks Arab)" },
               { id: 'lanjut_ayat_suara', icon: Zap, label: "Lanjut Ayat (Suara)" },
               { id: 'susun_kata', icon: LayoutGrid, label: "Susun Kata" },
               { id: 'susun_arti_perkata', icon: Book, label: "Susun Arti" },
