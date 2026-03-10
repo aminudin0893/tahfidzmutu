@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import { 
   Play, Square, RefreshCcw, Download, CheckCircle, 
   XCircle, BookOpen, Award, User, Settings,
@@ -565,30 +565,20 @@ export default function App() {
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `
-          Sebagai ahli Al-Quran profesional dan pakar fonetik Arab, tugas Anda adalah memverifikasi apakah bacaan pengguna sudah benar sesuai dengan ayat target.
+          Verifikasi ketat bacaan Al-Quran.
+          Target: "${currentQ.answerText}"
+          User: "${voiceTexts.join(' | ')}"
           
-          PANDUAN VERIFIKASI PRO (TAHFIDZPRO ADVANCED):
-          1. Abaikan Basmalah (Bismillah) di awal ayat jika pengguna tidak membacanya, atau jika STT tidak menangkapnya.
-          2. Abaikan kesalahan teknis dari mesin Speech-to-Text (STT) seperti:
-             - Salah penulisan harakat (fathah/kasrah/dammah).
-             - Variasi penulisan huruf yang mirip (misal: alif mamdudah vs alif maqsurah, ta marbutah vs ha).
-             - Kesalahan pemisahan atau penggabungan kata.
-             - Kesalahan fonetik (misal: 'q' jadi 'k', 'th' jadi 't', 's' jadi 'sh' atau sebaliknya).
-          3. Fokus pada substansi kata, urutan ayat, dan kelengkapan makna.
-          4. Jika transkrip STT mengandung setidaknya 60% kemiripan fonetik dengan ayat target, anggap BENAR.
-          5. Berikan toleransi sangat tinggi terhadap dialek dan kualitas audio.
-          6. Jika ayat mengandung Muqatta'at (seperti Alif Lam Mim), STT mungkin menuliskannya secara terpisah atau sebagai kata utuh, anggap benar jika bunyinya sesuai.
+          ATURAN KETAT:
+          1. Nyatakan BENAR (isCorrect: true) hanya jika kemiripan fonetik > 85%.
+          2. Abaikan Bismillah di awal jika tidak ada.
+          3. Toleransi kesalahan STT kecil (k/q, t/th) tapi tetap harus mendekati 90% akurasi kata.
           
-          Ayat Target: "${currentQ.answerText}"
-          Transkrip Suara (STT): "${voiceTexts.join(' | ')}"
-          
-          Berikan jawaban dalam format JSON:
-          {
-            "isCorrect": boolean,
-            "feedback": string (Berikan penjelasan singkat, motivasi, dan koreksi tajwid jika perlu)
-          }
+          Berikan jawaban JSON:
+          {"isCorrect": boolean, "feedback": "Penjelasan singkat & koreksi"}
         `,
         config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -640,33 +630,21 @@ export default function App() {
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `
-          Sebagai ahli Al-Quran profesional dan pakar tajwid, tugas Anda adalah menganalisis bacaan pengguna dan memberikan masukan spesifik.
+          Analisis tajwid ketat & cepat.
+          Ayat: "${targetAyah.text}"
+          User: "${voiceTexts.join(' | ')}"
           
-          INSTRUKSI ANALISIS:
-          1. Verifikasi kebenaran ayat target: "${targetAyah.text}"
-          2. Bandingkan dengan transkrip suara pengguna: "${voiceTexts.join(' | ')}"
+          INSTRUKSI:
+          1. Verifikasi ketat (isCorrect: true jika akurasi > 85%).
+          2. Jika benar: Sebutkan hukum tajwid yang tepat (Ikhfa, Mad, dll) & lokasinya.
+          3. Jika salah: Tunjukkan kata yang salah/kurang secara spesifik.
+          4. Gunakan EYD & poin nomor (1., 2.).
           
-          JIKA BACAAN BENAR (isCorrect: true):
-          - Berikan informasi mendetail mengenai hukum-hukum tajwid yang berhasil dibaca dengan baik pada ayat tersebut (misal: Ikhfa, Idgham, Mad, Qalqalah, dll). Sebutkan kata mana yang mengandung hukum tersebut.
-          
-          JIKA BACAAN SALAH (isCorrect: false):
-          - Tampilkan ketidaksesuaian bacaan secara spesifik (kata mana yang salah, tertukar, atau hilang) ATAU kesalahan hukum tajwid yang terdeteksi pada bagian tertentu.
-          
-          PANDUAN FORMAT & BAHASA:
-          - Gunakan aturan Ejaan Yang Disempurnakan (EYD) yang baik dan benar.
-          - Jika ada beberapa poin penting, gunakan penomoran menurun (1., 2., dst) dan pisahkan dengan baris baru agar rapi.
-          - Gunakan bahasa yang memotivasi, profesional, dan edukatif.
-          
-          PANDUAN VERIFIKASI:
-          - Jika kemiripan fonetik > 60%, nyatakan isCorrect: true.
-          
-          Berikan jawaban dalam format JSON:
-          {
-            "isCorrect": boolean,
-            "feedback": string (Informasi hukum tajwid yang berhasil dibaca jika benar, atau detail ketidaksesuaian jika salah)
-          }
+          Berikan jawaban JSON:
+          {"isCorrect": boolean, "feedback": "Analisis detail"}
         `,
         config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
