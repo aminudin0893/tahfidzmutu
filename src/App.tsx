@@ -1283,17 +1283,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {transcript && (
-                    <div className="mt-4 p-6 bg-white rounded-3xl border-2 border-emerald-100 w-full max-w-md mx-auto shadow-lg animate-in fade-in slide-in-from-bottom-4 duration-500">
-                      <div className="flex items-center justify-between mb-3 border-b border-emerald-50 pb-2">
-                        <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Hasil Analisis Suara Pro</p>
-                        <div className="flex gap-0.5">
-                          {[1, 2, 3].map(i => <div key={i} className="w-1 h-1 bg-emerald-400 rounded-full animate-pulse" style={{ animationDelay: `${i * 0.2}s` }}></div>)}
-                        </div>
-                      </div>
-                      <p className="font-arabic text-2xl sm:text-3xl text-blue-900 leading-relaxed" dir="rtl">{transcript}</p>
-                    </div>
-                  )}
+                  {/* Transcript hidden as per user request */}
                 </div>
               </div>
             </div>
