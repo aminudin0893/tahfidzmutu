@@ -762,7 +762,7 @@ export default function App() {
           </h3>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {[
-              { id: 'lanjut_ayat', icon: List, label: "Lanjut Ayat" },
+              { id: 'lanjut_ayat', icon: List, label: "Lanjut Ayat (Teks)" },
               { id: 'lanjut_ayat_suara', icon: Zap, label: "Lanjut Ayat (Suara)" },
               { id: 'susun_kata', icon: LayoutGrid, label: "Susun Kata" },
               { id: 'susun_arti_perkata', icon: Book, label: "Susun Arti" },
@@ -1457,7 +1457,7 @@ export default function App() {
             }}
             className="w-full bg-blue-900 text-white py-4 rounded-2xl font-black hover:bg-blue-800 transition-all shadow-lg shadow-blue-900/20 flex items-center justify-center gap-3 text-lg border-b-4 border-blue-950 active:border-b-0 active:translate-y-1"
           >
-            <RefreshCcw className="w-6 h-6" /> Main Lagi
+            <RefreshCcw className="w-6 h-6" /> Kembali
           </button>
         </div>
       </div>
