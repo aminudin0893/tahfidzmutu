@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { 
   Play, Square, RefreshCcw, Download, CheckCircle, 
   XCircle, BookOpen, Award, User, Settings,
@@ -133,11 +133,13 @@ export default function App() {
       
       rec.onresult = (event: any) => {
         let fullTranscript = '';
+        let isFinal = false;
         
         for (let i = 0; i < event.results.length; ++i) {
           const transcriptPart = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
             fullTranscript += transcriptPart + ' ';
+            isFinal = true;
           } else {
             // Interim results untuk feedback visual
             setTranscript(fullTranscript + transcriptPart);
@@ -147,7 +149,14 @@ export default function App() {
         if (fullTranscript.trim()) {
           const finalStr = fullTranscript.trim();
           setTranscript(finalStr);
-          setTranscripts([finalStr]); 
+          
+          // Only update transcripts and stop if it's final to avoid premature analysis
+          if (isFinal) {
+            setTranscripts([finalStr]); 
+            rec.stop();
+            setIsListening(false);
+            isListeningRef.current = false;
+          }
         }
       };
       
@@ -501,6 +510,15 @@ export default function App() {
       isListeningRef.current = true;
       try {
         recognition.start();
+        
+        // Safety timeout: stop recording after 10 seconds if it hasn't stopped yet
+        setTimeout(() => {
+          if (isListeningRef.current) {
+            recognition.stop();
+            setIsListening(false);
+            isListeningRef.current = false;
+          }
+        }, 10000);
       } catch (e) {
         console.error("Recognition start error", e);
         setIsListening(false);
@@ -578,7 +596,6 @@ export default function App() {
           {"isCorrect": boolean, "feedback": "Penjelasan singkat & koreksi"}
         `,
         config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -591,7 +608,17 @@ export default function App() {
         }
       });
 
-      const result = JSON.parse(response.text || "{}");
+      let result = { isCorrect: false, feedback: "Gagal memproses analisis." };
+      try {
+        result = JSON.parse(response.text || "{}");
+      } catch (e) {
+        console.error("JSON Parse error", e);
+        const normalizedVoice = normalizeArabic(voiceTexts[0]);
+        const normalizedCorrect = normalizeArabic(currentQ.answerText);
+        if (normalizedVoice.includes(normalizedCorrect) || normalizedCorrect.includes(normalizedVoice)) {
+          result = { isCorrect: true, feedback: "Bacaan terdeteksi benar (Fallback)." };
+        }
+      }
       
       if (result.isCorrect) {
         playDing();
@@ -644,7 +671,6 @@ export default function App() {
           {"isCorrect": boolean, "feedback": "Analisis detail"}
         `,
         config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -657,7 +683,17 @@ export default function App() {
         }
       });
 
-      const result = JSON.parse(response.text || "{}");
+      let result = { isCorrect: false, feedback: "Gagal memproses analisis." };
+      try {
+        result = JSON.parse(response.text || "{}");
+      } catch (e) {
+        console.error("JSON Parse error", e);
+        const normalizedVoice = normalizeArabic(voiceTexts[0]);
+        const normalizedCorrect = normalizeArabic(targetAyah.text);
+        if (normalizedVoice.includes(normalizedCorrect) || normalizedCorrect.includes(normalizedVoice)) {
+          result = { isCorrect: true, feedback: "Bacaan terdeteksi benar (Fallback)." };
+        }
+      }
       
       if (result.isCorrect) {
         playDing();
