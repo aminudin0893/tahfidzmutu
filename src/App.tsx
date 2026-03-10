@@ -623,42 +623,7 @@ export default function App() {
     const tightCorrect = normalizedCorrect.replace(/\s/g, '');
     const wordsCorrect = normalizedCorrect.split(/\s+/).filter(w => w.length > 0);
 
-    for (const voiceText of voiceTexts) {
-      const normalizedVoice = normalizeArabic(voiceText);
-      const tightVoice = normalizedVoice.replace(/\s/g, '');
-      const wordsVoice = normalizedVoice.split(/\s+/).filter(w => w.length > 0);
-
-      // Metrik 1: Jaccard Similarity (Irisan kata)
-      const intersection = wordsVoice.filter(w => wordsCorrect.includes(w));
-      const similarity = intersection.length / Math.max(wordsVoice.length, wordsCorrect.length);
-      
-      // Metrik 2: Coverage (Berapa banyak kata benar yang ada di suara)
-      const wordsPresentCount = wordsCorrect.filter(w => wordsVoice.includes(w)).length;
-      const coverage = wordsPresentCount / wordsCorrect.length;
-
-      const levSimilarity = getSimilarityScore(tightVoice, tightCorrect);
-
-      if (
-        normalizedVoice === normalizedCorrect || 
-        tightVoice === tightCorrect ||
-        normalizedVoice.includes(normalizedCorrect) ||
-        normalizedCorrect.includes(normalizedVoice) ||
-        similarity > 0.6 ||
-        coverage > 0.75 ||
-        levSimilarity > 0.7
-      ) {
-        playDing();
-        setQuranFeedback({
-          status: 'correct', 
-          text: voiceText,
-          aiFeedback: "Bacaan Anda terdeteksi sangat akurat secara sistem. Teruskan hafalan Anda dengan memperhatikan makhraj dan tajwid yang lebih mendalam."
-        });
-        setTranscripts([]);
-        return;
-      }
-    }
-
-    // Jika logika cepat gagal, gunakan "Super Advanced Pro" Gemini AI untuk verifikasi profesional
+    // Gunakan "Super Advanced Pro" Gemini AI untuk verifikasi profesional dan analisis tajwid mendalam
     setIsVerifyingAI(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -667,21 +632,28 @@ export default function App() {
         contents: `
           Sebagai ahli Al-Quran profesional dan pakar tajwid, tugas Anda adalah menganalisis bacaan pengguna dan memberikan masukan spesifik.
           
-          INSTRUKSI ANALISIS TAJWID:
+          INSTRUKSI ANALISIS:
           1. Verifikasi kebenaran ayat target: "${targetAyah.text}"
           2. Bandingkan dengan transkrip suara pengguna: "${voiceTexts.join(' | ')}"
-          3. Berikan analisis tajwid spesifik untuk ayat ini (misal: hukum Nun Mati/Tanwin, Mad, Qalqalah, dll yang ada pada ayat tersebut).
-          4. Berikan masukan apakah bacaan sudah benar atau ada yang perlu diperbaiki.
-          5. Gunakan bahasa yang memotivasi dan edukatif.
+          
+          JIKA BACAAN BENAR (isCorrect: true):
+          - Berikan informasi mendetail mengenai hukum-hukum tajwid yang berhasil dibaca dengan baik pada ayat tersebut (misal: Ikhfa, Idgham, Mad, Qalqalah, dll). Sebutkan kata mana yang mengandung hukum tersebut.
+          
+          JIKA BACAAN SALAH (isCorrect: false):
+          - Tampilkan ketidaksesuaian bacaan secara spesifik (kata mana yang salah, tertukar, atau hilang) ATAU kesalahan hukum tajwid yang terdeteksi pada bagian tertentu.
+          
+          PANDUAN FORMAT & BAHASA:
+          - Gunakan aturan Ejaan Yang Disempurnakan (EYD) yang baik dan benar.
+          - Jika ada beberapa poin penting, gunakan penomoran menurun (1., 2., dst) dan pisahkan dengan baris baru agar rapi.
+          - Gunakan bahasa yang memotivasi, profesional, dan edukatif.
           
           PANDUAN VERIFIKASI:
           - Jika kemiripan fonetik > 60%, nyatakan isCorrect: true.
-          - Meskipun benar, tetap berikan "feedback" berisi tips tajwid spesifik untuk ayat tersebut.
           
           Berikan jawaban dalam format JSON:
           {
             "isCorrect": boolean,
-            "feedback": string (Analisis tajwid mendalam dan saran perbaikan)
+            "feedback": string (Informasi hukum tajwid yang berhasil dibaca jika benar, atau detail ketidaksesuaian jika salah)
           }
         `,
         config: {
@@ -1029,12 +1001,14 @@ export default function App() {
                       </p>
                       
                       {quranFeedback.aiFeedback && (
-                        <div className={`mt-3 p-4 rounded-2xl border text-xs leading-relaxed font-medium ${quranFeedback.status === 'correct' ? 'bg-white/50 border-emerald-100 text-emerald-800' : 'bg-white/50 border-rose-100 text-rose-800'}`}>
-                          <div className="flex items-center gap-2 mb-2">
+                        <div className={`mt-3 p-4 rounded-2xl border text-[11px] sm:text-xs leading-relaxed font-medium whitespace-pre-line ${quranFeedback.status === 'correct' ? 'bg-white/50 border-emerald-100 text-emerald-800' : 'bg-white/50 border-rose-100 text-rose-800'}`}>
+                          <div className="flex items-center gap-2 mb-2 border-b border-current/10 pb-2">
                             <Zap className="w-3.5 h-3.5" />
                             <span className="font-black uppercase tracking-widest text-[10px]">Analisis Tajwid AI</span>
                           </div>
-                          {quranFeedback.aiFeedback}
+                          <div className="space-y-1">
+                            {quranFeedback.aiFeedback}
+                          </div>
                         </div>
                       )}
                       
