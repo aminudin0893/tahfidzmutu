@@ -360,6 +360,33 @@ export default function App() {
     setStep('playing');
   };
 
+  const getLevenshteinDistance = (s1: string, s2: string) => {
+    const len1 = s1.length;
+    const len2 = s2.length;
+    const matrix = Array.from({ length: len1 + 1 }, () => Array(len2 + 1).fill(0));
+
+    for (let i = 0; i <= len1; i++) matrix[i][0] = i;
+    for (let j = 0; j <= len2; j++) matrix[0][j] = j;
+
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j - 1] + cost
+        );
+      }
+    }
+    return matrix[len1][len2];
+  };
+
+  const getSimilarityScore = (s1: string, s2: string) => {
+    const distance = getLevenshteinDistance(s1, s2);
+    const maxLength = Math.max(s1.length, s2.length);
+    return maxLength === 0 ? 1.0 : 1.0 - distance / maxLength;
+  };
+
   const normalizeArabic = (text: string) => {
     if (!text) return "";
     
@@ -498,13 +525,16 @@ export default function App() {
       const wordsPresentCount = wordsCorrect.filter(w => wordsVoice.includes(w)).length;
       const coverage = wordsPresentCount / wordsCorrect.length;
 
+      const levSimilarity = getSimilarityScore(tightVoice, tightCorrect);
+
       if (
         normalizedVoice.includes(normalizedCorrect) || 
         normalizedCorrect.includes(normalizedVoice) ||
         tightVoice.includes(tightCorrect) ||
         tightCorrect.includes(tightVoice) ||
         similarity > 0.6 ||
-        coverage > 0.75
+        coverage > 0.75 ||
+        levSimilarity > 0.7
       ) {
         playDing();
         setFeedback('correct');
@@ -523,14 +553,15 @@ export default function App() {
         contents: `
           Sebagai ahli Al-Quran profesional dan pakar fonetik Arab, tugas Anda adalah memverifikasi apakah bacaan pengguna sudah benar sesuai dengan ayat target.
           
-          PANDUAN VERIFIKASI PRO:
+          PANDUAN VERIFIKASI PRO (TAHFIDZPRO ADVANCED):
           1. Abaikan kesalahan teknis dari mesin Speech-to-Text (STT) seperti:
              - Salah penulisan harakat (fathah/kasrah/dammah) yang sering terjadi di STT.
              - Variasi penulisan huruf yang mirip (misal: alif mamdudah vs alif maqsurah).
              - Kesalahan pemisahan kata yang tidak disengaja oleh mesin.
-          2. Fokus pada substansi kata dan urutan ayat.
-          3. Jika transkrip STT mengandung setidaknya 70% kemiripan fonetik dengan ayat target, anggap BENAR.
-          4. Pertimbangkan variasi dialek atau kecepatan bacaan yang mungkin mempengaruhi hasil STT.
+             - Kesalahan fonetik yang wajar (misal: 'q' jadi 'k', 'th' jadi 't' karena keterbatasan mic).
+          2. Fokus pada substansi kata, urutan ayat, dan kelengkapan makna.
+          3. Jika transkrip STT mengandung setidaknya 65% kemiripan fonetik dengan ayat target, anggap BENAR.
+          4. Berikan toleransi tinggi terhadap kebisingan latar belakang atau kualitas audio yang rendah.
           
           Ayat Target: "${currentQ.answerText}"
           Transkrip Suara (STT): "${voiceTexts.join(' | ')}"
@@ -538,7 +569,7 @@ export default function App() {
           Berikan jawaban dalam format JSON:
           {
             "isCorrect": boolean,
-            "feedback": string (Berikan penjelasan singkat dan motivasi)
+            "feedback": string (Berikan penjelasan singkat, motivasi, dan koreksi tajwid jika perlu)
           }
         `,
         config: {
@@ -599,13 +630,16 @@ export default function App() {
       const wordsPresentCount = wordsCorrect.filter(w => wordsVoice.includes(w)).length;
       const coverage = wordsPresentCount / wordsCorrect.length;
 
+      const levSimilarity = getSimilarityScore(tightVoice, tightCorrect);
+
       if (
         normalizedVoice === normalizedCorrect || 
         tightVoice === tightCorrect ||
         normalizedVoice.includes(normalizedCorrect) ||
         normalizedCorrect.includes(normalizedVoice) ||
         similarity > 0.6 ||
-        coverage > 0.75
+        coverage > 0.75 ||
+        levSimilarity > 0.7
       ) {
         playDing();
         setQuranFeedback({status: 'correct', text: voiceText});
@@ -623,14 +657,15 @@ export default function App() {
         contents: `
           Sebagai ahli Al-Quran profesional dan pakar fonetik Arab, tugas Anda adalah memverifikasi apakah bacaan pengguna sudah benar sesuai dengan ayat target.
           
-          PANDUAN VERIFIKASI PRO:
+          PANDUAN VERIFIKASI PRO (TAHFIDZPRO ADVANCED):
           1. Abaikan kesalahan teknis dari mesin Speech-to-Text (STT) seperti:
              - Salah penulisan harakat atau tanda baca.
-             - Variasi penulisan huruf yang mirip secara fonetik.
+             - Variasi penulisan huruf yang mirip secara fonetik (misal: 'ha' vs 'kha', 'ta' vs 'tha').
              - Kesalahan segmentasi kata oleh mesin STT.
           2. Fokus pada kebenaran lafadz dan urutan kata.
-          3. Jika transkrip STT memiliki kemiripan fonetik yang kuat (minimal 70%) dengan ayat target, nyatakan BENAR.
+          3. Jika transkrip STT memiliki kemiripan fonetik yang kuat (minimal 65%) dengan ayat target, nyatakan BENAR.
           4. Berikan toleransi tinggi terhadap keterbatasan teknologi STT dalam menangkap makhraj yang sempurna.
+          5. Jika pengguna membaca dengan benar namun STT salah menangkap beberapa kata, tetap nyatakan BENAR.
           
           Ayat Target: "${targetAyah.text}"
           Transkrip Suara (STT): "${voiceTexts.join(' | ')}"
@@ -638,7 +673,7 @@ export default function App() {
           Berikan jawaban dalam format JSON:
           {
             "isCorrect": boolean,
-            "feedback": string (Penjelasan singkat yang membangun)
+            "feedback": string (Penjelasan singkat yang membangun dan tips tajwid)
           }
         `,
         config: {
