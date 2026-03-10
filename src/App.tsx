@@ -9,7 +9,7 @@ import {
   Play, Square, RefreshCcw, Download, CheckCircle, 
   XCircle, BookOpen, Award, User, Settings,
   List, LayoutGrid, Book, MessageSquare, Leaf, Zap, Flame, Mic, AlertCircle, Star, Volume2,
-  Eye, EyeOff, Copy, Key
+  Eye, EyeOff, Copy, Key, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 // --- Global Data untuk Distractor (Pilihan Salah) ---
@@ -83,11 +83,14 @@ export default function App() {
   // Quran Menu State
   const [quranSurah, setQuranSurah] = useState(1);
   const [quranAyahs, setQuranAyahs] = useState<any[]>([]);
+  const [quranPages, setQuranPages] = useState<any[][]>([]);
+  const [selectedPageIdx, setSelectedPageIdx] = useState(0);
   const [selectedAyahIdx, setSelectedAyahIdx] = useState(0);
   const [quranFeedback, setQuranFeedback] = useState<{status: 'idle' | 'correct' | 'incorrect', text: string, aiFeedback?: string}>({status: 'idle', text: ''});
   const [isQuranFetching, setIsQuranFetching] = useState(false);
   const [isVerifyingAI, setIsVerifyingAI] = useState(false);
   const [isVoiceAnalysisEnabled, setIsVoiceAnalysisEnabled] = useState(true);
+  const [correctingIdx, setCorrectingIdx] = useState<number | null>(null);
   
   // Playing State
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -113,6 +116,8 @@ export default function App() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const isListeningRef = useRef(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   // --- Effects ---
   useEffect(() => {
@@ -141,60 +146,72 @@ export default function App() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
-      rec.continuous = false;
+      rec.continuous = true; // Changed to true for continuous reading
       rec.interimResults = true;
       rec.maxAlternatives = 3;
       rec.lang = 'ar-SA';
       
+      const resetSilenceTimer = () => {
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = setTimeout(() => {
+          if (isListeningRef.current) {
+            console.log("Silence timeout - stopping recognition");
+            rec.stop();
+          }
+        }, 8000); // 8 seconds of silence to stop
+      };
+
+      rec.onstart = () => {
+        resetSilenceTimer();
+      };
+
       rec.onresult = (event: any) => {
+        resetSilenceTimer();
         let fullTranscript = '';
         let isFinal = false;
         
-        for (let i = 0; i < event.results.length; ++i) {
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
           const transcriptPart = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
             fullTranscript += transcriptPart + ' ';
             isFinal = true;
           } else {
-            // Interim results untuk feedback visual
-            setTranscript(fullTranscript + transcriptPart);
+            setTranscript(transcriptPart);
           }
         }
         
-        if (fullTranscript.trim()) {
+        if (fullTranscript.trim() && isFinal) {
           const finalStr = fullTranscript.trim();
           setTranscript(finalStr);
-          
-          // Only update transcripts and stop if it's final to avoid premature analysis
-          if (isFinal) {
-            setTranscripts([finalStr]); 
-            rec.stop();
-            setIsListening(false);
-            isListeningRef.current = false;
-          }
+          setTranscripts([finalStr]);
+          // In continuous mode, we don't necessarily stop, 
+          // but we trigger analysis for the current segment
         }
       };
       
       rec.onerror = (event: any) => {
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         console.error("Speech recognition error", event.error);
-        setIsListening(false);
-        isListeningRef.current = false;
+        if (event.error !== 'no-speech') {
+          setIsListening(false);
+          isListeningRef.current = false;
+        }
         
         if (event.error === 'network') {
-          setVoiceError("Koneksi internet bermasalah atau layanan suara tidak tersedia. Pastikan internet stabil.");
+          setVoiceError("Koneksi internet bermasalah.");
         } else if (event.error === 'not-allowed') {
-          setVoiceError("Izin mikrofon ditolak. Mohon izinkan akses mikrofon di browser Anda.");
-        } else if (event.error !== 'no-speech') {
-          setVoiceError(`Terjadi kesalahan: ${event.error}`);
+          setVoiceError("Izin mikrofon ditolak.");
         }
       };
       
       rec.onend = () => {
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         setIsListening(false);
         isListeningRef.current = false;
       };
       
       setRecognition(rec);
+      recognitionRef.current = rec;
     }
   }, []);
 
@@ -278,7 +295,23 @@ export default function App() {
       fetch(`https://api.alquran.cloud/v1/surah/${quranSurah}/ar.alafasy`)
         .then(res => res.json())
         .then(data => {
-          setQuranAyahs(data.data.ayahs);
+          const ayahs = data.data.ayahs;
+          setQuranAyahs(ayahs);
+          
+          // Group ayahs by page
+          const pagesMap: { [key: number]: any[] } = {};
+          ayahs.forEach((ayah: any) => {
+            if (!pagesMap[ayah.page]) pagesMap[ayah.page] = [];
+            pagesMap[ayah.page].push(ayah);
+          });
+          
+          const sortedPages = Object.keys(pagesMap)
+            .map(Number)
+            .sort((a, b) => a - b)
+            .map(page => pagesMap[page]);
+            
+          setQuranPages(sortedPages);
+          setSelectedPageIdx(0);
           setSelectedAyahIdx(0);
           setQuranFeedback({status: 'idle', text: ''});
           setTranscript('');
@@ -292,10 +325,11 @@ export default function App() {
   }, [quranSurah, mainTab]);
 
   useEffect(() => {
-    if (mainTab === 'quran' && transcripts.length > 0 && !isListening && !isVerifyingAI && isVoiceAnalysisEnabled) {
+    if (mainTab === 'quran' && transcripts.length > 0 && !isVerifyingAI && isVoiceAnalysisEnabled) {
       checkQuranReading(transcripts);
+      setTranscripts([]); // Clear after processing
     }
-  }, [transcripts, isListening, mainTab, isVerifyingAI, isVoiceAnalysisEnabled]);
+  }, [transcripts, mainTab, isVerifyingAI, isVoiceAnalysisEnabled]);
 
   useEffect(() => {
     if (!isVoiceAnalysisEnabled) {
@@ -533,15 +567,6 @@ export default function App() {
       isListeningRef.current = true;
       try {
         recognition.start();
-        
-        // Safety timeout: stop recording after 10 seconds if it hasn't stopped yet
-        setTimeout(() => {
-          if (isListeningRef.current) {
-            recognition.stop();
-            setIsListening(false);
-            isListeningRef.current = false;
-          }
-        }, 10000);
       } catch (e) {
         console.error("Recognition start error", e);
         setIsListening(false);
@@ -682,15 +707,20 @@ export default function App() {
     checkVoiceAnswerMulti([voiceText]);
   };
 
+  const moveToNextAyah = () => {
+    // This is now handled immediately in checkQuranReading for better responsiveness
+  };
+
   const checkQuranReading = async (voiceTexts: string[]) => {
-    const targetAyah = quranAyahs[selectedAyahIdx];
+    const currentIdx = selectedAyahIdx;
+    const targetAyah = quranAyahs[currentIdx];
     if (!targetAyah) return;
 
     const normalizedCorrect = normalizeArabic(targetAyah.text);
     const tightCorrect = normalizedCorrect.replace(/\s/g, '');
     const wordsCorrect = normalizedCorrect.split(/\s+/).filter(w => w.length > 0);
 
-    // Gunakan "Super Advanced Pro" Gemini AI untuk verifikasi profesional dan analisis tajwid mendalam
+    // Gunakan Gemini AI untuk verifikasi cepat benar/salah bacaan
     setIsVerifyingAI(true);
     try {
       const ai = new GoogleGenAI({ apiKey: customApiKey || process.env.GEMINI_API_KEY });
@@ -699,18 +729,18 @@ export default function App() {
       const aiPromise = ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `
-          Analisis tajwid & pengucapan (Makharijul Huruf) secara mendalam.
-          Ayat: "${targetAyah.text}"
-          User: "${voiceTexts.join(' | ')}"
+          Verifikasi kebenaran bacaan Al-Quran (Benar/Salah saja).
+          Ayat Target: "${targetAyah.text}"
+          User Input: "${voiceTexts.join(' | ')}"
           
           INSTRUKSI:
-          1. Verifikasi ketat (isCorrect: true jika akurasi > 85%).
-          2. Jika benar: Berikan pujian "Suara anda terdengar sangat baik, aplikasi sudah siap untuk digunakan." lalu sebutkan hukum tajwid yang tepat (Ikhfa, Mad, dll) & lokasinya.
-          3. Jika salah: Tunjukkan kata yang salah/kurang secara spesifik dari sisi makhraj atau tajwid.
-          4. Gunakan EYD & poin nomor (1., 2.).
+          1. Bandingkan input user dengan ayat target secara fonetik.
+          2. isCorrect: true jika kemiripan > 85%.
+          3. feedback: Jika benar, berikan pesan "Bacaan anda bagus"
+          4. feedback: Jika salah, sebutkan bagian mana yang kurang tepat secara singkat.
           
           Berikan jawaban JSON:
-          {"isCorrect": boolean, "feedback": "Analisis detail"}
+          {"isCorrect": boolean, "feedback": "Pesan singkat"}
         `,
         config: {
           responseMimeType: "application/json",
@@ -739,16 +769,37 @@ export default function App() {
         const normalizedVoice = normalizeArabic(voiceTexts[0]);
         const normalizedCorrect = normalizeArabic(targetAyah.text);
         if (normalizedVoice.includes(normalizedCorrect) || normalizedCorrect.includes(normalizedVoice)) {
-          result = { isCorrect: true, feedback: "Suara anda terdengar sangat baik, aplikasi sudah siap untuk digunakan. Bacaan terdeteksi benar (Fallback)." };
+          result = { isCorrect: true, feedback: "Bacaan anda bagus. Bacaan terdeteksi benar (Fallback)." };
         }
       }
       
       if (result.isCorrect) {
         playDing();
         setQuranFeedback({status: 'correct', text: voiceTexts[0], aiFeedback: result.feedback});
+        setCorrectingIdx(currentIdx);
+        
+        // Move to next ayah immediately so next voice input targets next ayah
+        setSelectedAyahIdx(prev => {
+          const nextIdx = prev + 1;
+          if (nextIdx < quranAyahs.length) {
+            const nextAyah = quranAyahs[nextIdx];
+            const currentPage = quranPages[selectedPageIdx];
+            const isNextOnDifferentPage = !currentPage.some(a => a.number === nextAyah.number);
+            if (isNextOnDifferentPage) setSelectedPageIdx(p => p + 1);
+            return nextIdx;
+          }
+          return prev;
+        });
+
+        // Clear feedback after delay
+        setTimeout(() => {
+          setCorrectingIdx(null);
+          setQuranFeedback({status: 'idle', text: ''});
+        }, 2000);
       } else {
         playBuzzer();
         setQuranFeedback({status: 'incorrect', text: voiceTexts[0], aiFeedback: result.feedback});
+        if (recognitionRef.current) recognitionRef.current.stop();
         if (targetAyah.audio) {
           const audio = new Audio(targetAyah.audio);
           audio.play();
@@ -756,15 +807,31 @@ export default function App() {
       }
     } catch (error) {
       console.error("AI Verification error", error);
-      // Fallback simple check on error
       const normalizedVoice = normalizeArabic(voiceTexts[0]);
       const normalizedCorrect = normalizeArabic(targetAyah.text);
       if (normalizedVoice.includes(normalizedCorrect) || normalizedCorrect.includes(normalizedVoice)) {
         playDing();
-        setQuranFeedback({status: 'correct', text: voiceTexts[0], aiFeedback: "Suara anda terdengar sangat baik, aplikasi sudah siap untuk digunakan. Bacaan terdeteksi benar (Fallback)."});
+        setQuranFeedback({status: 'correct', text: voiceTexts[0], aiFeedback: "Bacaan anda bagus. Bacaan terdeteksi benar (Fallback)."});
+        setCorrectingIdx(currentIdx);
+        setSelectedAyahIdx(prev => {
+          const nextIdx = prev + 1;
+          if (nextIdx < quranAyahs.length) {
+            const nextAyah = quranAyahs[nextIdx];
+            const currentPage = quranPages[selectedPageIdx];
+            const isNextOnDifferentPage = !currentPage.some(a => a.number === nextAyah.number);
+            if (isNextOnDifferentPage) setSelectedPageIdx(p => p + 1);
+            return nextIdx;
+          }
+          return prev;
+        });
+        setTimeout(() => {
+          setCorrectingIdx(null);
+          setQuranFeedback({status: 'idle', text: ''});
+        }, 2000);
       } else {
         playBuzzer();
-        setQuranFeedback({status: 'incorrect', text: voiceTexts[0], aiFeedback: "Gagal melakukan analisis AI atau waktu habis. Silakan coba lagi."});
+        setQuranFeedback({status: 'incorrect', text: voiceTexts[0], aiFeedback: "Gagal melakukan analisis AI."});
+        if (recognitionRef.current) recognitionRef.current.stop();
         if (targetAyah.audio) {
           const audio = new Audio(targetAyah.audio);
           audio.play();
@@ -772,7 +839,6 @@ export default function App() {
       }
     } finally {
       setIsVerifyingAI(false);
-      setTranscripts([]);
     }
   };
 
@@ -1041,16 +1107,16 @@ export default function App() {
                 <Mic className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Fitur Uji Bacaan Aktif</p>
-                <p className="text-xs text-blue-800 font-medium">Suara anda terdengar sangat baik, aplikasi sudah siap untuk digunakan.</p>
+                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">aktifkan koreksi bacaan</p>
+                <p className="text-xs text-blue-800 font-medium">Bacaan anda bagus</p>
               </div>
             </div>
           )}
 
           <div className="flex items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-100">
             <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mode Uji Coba Suara</p>
-              <p className="text-xs text-slate-600 font-bold">{isVoiceAnalysisEnabled ? 'Aktif (AI Menganalisis)' : 'Nonaktif (Baca Mandiri)'}</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">aktifkan koreksi bacaan</p>
+              <p className="text-xs text-slate-600 font-bold">{isVoiceAnalysisEnabled ? 'Aktif (Koreksi AI)' : 'Nonaktif (Baca Mandiri)'}</p>
             </div>
             <button 
               onClick={() => setIsVoiceAnalysisEnabled(!isVoiceAnalysisEnabled)}
@@ -1080,43 +1146,90 @@ export default function App() {
           ) : (
             <div className="space-y-6">
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Baca & Koreksi AI</h3>
+                <div className="flex flex-col">
+                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Halaman {quranPages[selectedPageIdx]?.[0]?.page || '-'}</h3>
+                  <p className="text-[10px] text-blue-600 font-bold">Standar Mushaf Madinah (15 Baris)</p>
+                </div>
                 <div className="flex gap-2">
                   <button 
-                    disabled={selectedAyahIdx === 0}
-                    onClick={() => {setSelectedAyahIdx(prev => prev - 1); setQuranFeedback({status: 'idle', text: ''}); setTranscript('');}}
+                    disabled={selectedPageIdx === 0}
+                    onClick={() => {
+                      const newPageIdx = selectedPageIdx - 1;
+                      setSelectedPageIdx(newPageIdx);
+                      const firstAyahOfPage = quranPages[newPageIdx][0];
+                      const globalIdx = quranAyahs.findIndex(a => a.number === firstAyahOfPage.number);
+                      setSelectedAyahIdx(globalIdx);
+                      setQuranFeedback({status: 'idle', text: ''}); 
+                      setTranscript('');
+                    }}
                     className="p-1.5 rounded-lg bg-slate-100 text-slate-600 disabled:opacity-30 hover:bg-slate-200 transition-colors"
                   >
-                    <RefreshCcw className="w-3.5 h-3.5 rotate-180" />
+                    <ChevronLeft className="w-4 h-4" />
                   </button>
                   <span className="bg-blue-50 text-blue-900 px-2.5 py-1 rounded-lg text-[10px] font-black flex items-center">
-                    Ayat {selectedAyahIdx + 1} / {quranAyahs.length}
+                    Hal {selectedPageIdx + 1} / {quranPages.length}
                   </span>
                   <button 
-                    disabled={selectedAyahIdx === quranAyahs.length - 1}
-                    onClick={() => {setSelectedAyahIdx(prev => prev + 1); setQuranFeedback({status: 'idle', text: ''}); setTranscript('');}}
+                    disabled={selectedPageIdx === quranPages.length - 1}
+                    onClick={() => {
+                      const newPageIdx = selectedPageIdx + 1;
+                      setSelectedPageIdx(newPageIdx);
+                      const firstAyahOfPage = quranPages[newPageIdx][0];
+                      const globalIdx = quranAyahs.findIndex(a => a.number === firstAyahOfPage.number);
+                      setSelectedAyahIdx(globalIdx);
+                      setQuranFeedback({status: 'idle', text: ''}); 
+                      setTranscript('');
+                    }}
                     className="p-1.5 rounded-lg bg-slate-100 text-slate-600 disabled:opacity-30 hover:bg-slate-200 transition-colors"
                   >
-                    <RefreshCcw className="w-3.5 h-3.5" />
+                    <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
-              <div className="p-8 sm:p-12 bg-gradient-to-b from-slate-50 to-white rounded-[2.5rem] border border-slate-100 shadow-inner text-center relative group">
-                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                   <button 
-                     onClick={() => {
-                       const audio = new Audio(quranAyahs[selectedAyahIdx]?.audio);
-                       audio.play();
-                     }}
-                     className="p-2 bg-white rounded-full shadow-sm border border-slate-100 text-blue-600 hover:text-blue-800"
-                   >
-                     <Volume2 className="w-5 h-5" />
-                   </button>
+              <div className="p-6 sm:p-10 bg-white rounded-[2.5rem] border border-slate-100 shadow-sm text-right relative group min-h-[400px]" dir="rtl">
+                <div className="flex flex-wrap justify-center gap-x-2 gap-y-6 font-arabic text-2xl sm:text-3xl leading-[2.8] text-slate-800">
+                  {quranPages[selectedPageIdx]?.map((ayah) => {
+                    const globalIdx = quranAyahs.findIndex(a => a.number === ayah.number);
+                    const isSelected = selectedAyahIdx === globalIdx;
+                    
+                    return (
+                      <span 
+                        key={ayah.number} 
+                        onClick={() => {
+                          setSelectedAyahIdx(globalIdx);
+                          setQuranFeedback({status: 'idle', text: ''});
+                        }}
+                        className={`cursor-pointer transition-all duration-500 rounded-xl px-2 py-1 ${
+                          correctingIdx === globalIdx
+                            ? 'bg-emerald-100 text-emerald-800 ring-4 ring-emerald-200 shadow-sm z-10' 
+                            : selectedAyahIdx === globalIdx
+                              ? quranFeedback.status === 'incorrect'
+                                ? 'bg-rose-100 text-rose-800 ring-4 ring-rose-200 shadow-sm z-10'
+                                : 'bg-blue-50 text-blue-700 ring-4 ring-blue-100 shadow-sm z-10' 
+                              : 'hover:bg-slate-50 opacity-80'
+                        }`}
+                      >
+                        {ayah.text} 
+                        <span className="text-lg text-amber-500 mx-2 font-sans border border-amber-200 rounded-full w-8 h-8 inline-flex items-center justify-center bg-amber-50/50">
+                          {ayah.numberInSurah}
+                        </span>
+                      </span>
+                    );
+                  })}
                 </div>
-                <p className="text-4xl sm:text-5xl font-arabic text-slate-800 leading-[2.2] drop-shadow-sm" dir="rtl">
-                  {quranAyahs[selectedAyahIdx]?.text}
-                </p>
+                
+                <div className="mt-8 pt-6 border-t border-slate-50 flex justify-center gap-4">
+                  <button 
+                    onClick={() => {
+                      const audio = new Audio(quranAyahs[selectedAyahIdx]?.audio);
+                      audio.play();
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-100 transition-colors"
+                  >
+                    <Volume2 className="w-4 h-4" /> Putar Ayat Terpilih
+                  </button>
+                </div>
               </div>
 
               <div className="flex flex-col items-center gap-5 py-2">
@@ -1150,7 +1263,7 @@ export default function App() {
                     {isVerifyingAI && (
                       <div className="flex items-center gap-2 bg-amber-50 px-4 py-2 rounded-full border border-amber-100 animate-pulse">
                         <RefreshCcw className="w-3 h-3 animate-spin text-amber-600" />
-                        <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Analisis AI Profesional...</span>
+                        <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Koreksi AI Berjalan...</span>
                       </div>
                     )}
                   </>
@@ -1174,7 +1287,7 @@ export default function App() {
                         <div className={`mt-3 p-4 rounded-2xl border text-[11px] sm:text-xs leading-relaxed font-medium whitespace-pre-line ${quranFeedback.status === 'correct' ? 'bg-white/50 border-emerald-100 text-emerald-800' : 'bg-white/50 border-rose-100 text-rose-800'}`}>
                           <div className="flex items-center gap-2 mb-2 border-b border-current/10 pb-2">
                             <Zap className="w-3.5 h-3.5" />
-                            <span className="font-black uppercase tracking-widest text-[10px]">Analisis Tajwid AI</span>
+                            <span className="font-black uppercase tracking-widest text-[10px]">Koreksi AI</span>
                           </div>
                           <div className="space-y-1">
                             {quranFeedback.aiFeedback}
