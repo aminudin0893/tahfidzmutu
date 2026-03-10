@@ -91,6 +91,8 @@ export default function App() {
   const [isVerifyingAI, setIsVerifyingAI] = useState(false);
   const [isVoiceAnalysisEnabled, setIsVoiceAnalysisEnabled] = useState(true);
   const [correctingIdx, setCorrectingIdx] = useState<number | null>(null);
+  const [showTranslationAyah, setShowTranslationAyah] = useState<any | null>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   // Playing State
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -292,15 +294,24 @@ export default function App() {
   useEffect(() => {
     if (mainTab === 'quran') {
       setIsQuranFetching(true);
-      fetch(`https://api.alquran.cloud/v1/surah/${quranSurah}/ar.alafasy`)
-        .then(res => res.json())
-        .then(data => {
-          const ayahs = data.data.ayahs;
-          setQuranAyahs(ayahs);
+      Promise.all([
+        fetch(`https://api.alquran.cloud/v1/surah/${quranSurah}/ar.alafasy`).then(res => res.json()),
+        fetch(`https://api.alquran.cloud/v1/surah/${quranSurah}/id.indonesian`).then(res => res.json())
+      ])
+        .then(([arData, idData]) => {
+          const ayahsAr = arData.data.ayahs;
+          const ayahsId = idData.data.ayahs;
+          
+          const mergedAyahs = ayahsAr.map((ayah: any, index: number) => ({
+            ...ayah,
+            translation: ayahsId[index].text
+          }));
+
+          setQuranAyahs(mergedAyahs);
           
           // Group ayahs by page
           const pagesMap: { [key: number]: any[] } = {};
-          ayahs.forEach((ayah: any) => {
+          mergedAyahs.forEach((ayah: any) => {
             if (!pagesMap[ayah.page]) pagesMap[ayah.page] = [];
             pagesMap[ayah.page].push(ayah);
           });
@@ -709,6 +720,20 @@ export default function App() {
 
   const moveToNextAyah = () => {
     // This is now handled immediately in checkQuranReading for better responsiveness
+  };
+
+  const handleAyahPressStart = (ayah: any) => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      setShowTranslationAyah(ayah);
+    }, 3000);
+  };
+
+  const handleAyahPressEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
   };
 
   const checkQuranReading = async (voiceTexts: string[]) => {
@@ -1200,6 +1225,11 @@ export default function App() {
                           setSelectedAyahIdx(globalIdx);
                           setQuranFeedback({status: 'idle', text: ''});
                         }}
+                        onMouseDown={() => handleAyahPressStart(ayah)}
+                        onMouseUp={handleAyahPressEnd}
+                        onMouseLeave={handleAyahPressEnd}
+                        onTouchStart={() => handleAyahPressStart(ayah)}
+                        onTouchEnd={handleAyahPressEnd}
                         className={`cursor-pointer transition-all duration-500 rounded-xl px-2 py-1 ${
                           correctingIdx === globalIdx
                             ? 'bg-emerald-100 text-emerald-800 ring-4 ring-emerald-200 shadow-sm z-10' 
@@ -1835,6 +1865,51 @@ export default function App() {
           dibuat oleh: <a href="https://aminudin.top/" target="_blank" rel="noopener noreferrer" className="text-blue-900 hover:underline">Aminudin.S.Pd.</a>
         </p>
       </footer>
+      {/* Translation Modal */}
+      {showTranslationAyah && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="p-8 space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
+                    <BookOpen className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-800">Arti Ayat</h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                      Surah {quranSurah}, Ayat {showTranslationAyah.numberInSurah}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowTranslationAyah(null)}
+                  className="p-2 hover:bg-slate-100 rounded-full transition-colors"
+                >
+                  <XCircle className="w-6 h-6 text-slate-400" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-2xl font-arabic text-slate-800 text-right leading-relaxed" dir="rtl">
+                  {showTranslationAyah.text}
+                </p>
+                <div className="h-px bg-slate-100 w-full" />
+                <p className="text-slate-600 leading-relaxed font-medium italic">
+                  "{showTranslationAyah.translation}"
+                </p>
+              </div>
+
+              <button 
+                onClick={() => setShowTranslationAyah(null)}
+                className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
