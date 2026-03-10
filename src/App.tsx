@@ -1558,7 +1558,7 @@ export default function App() {
 
       <footer className="mt-12 pb-4 text-center">
         <p className="text-slate-400 text-xs sm:text-sm font-black uppercase tracking-widest">
-          dibuat oleh: <span className="text-blue-900">Aminudin.S.Pd.</span>
+          dibuat oleh: <a href="https://aminudin.top/" target="_blank" rel="noopener noreferrer" className="text-blue-900 hover:underline">Aminudin.S.Pd.</a>
         </p>
       </footer>
     </div>
