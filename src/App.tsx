@@ -95,9 +95,13 @@ export default function App() {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   
   // Custom API Key State
-  const [customApiKey, setCustomApiKey] = useState('');
+  const [customApiKey, setCustomApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
   const [showApiKey, setShowApiKey] = useState(false);
   const [isApiKeyPanelOpen, setIsApiKeyPanelOpen] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('gemini_api_key', customApiKey);
+  }, [customApiKey]);
   
   // Khusus untuk Game 2 (Susun Kata)
   const [scrambledWords, setScrambledWords] = useState<any[]>([]);
