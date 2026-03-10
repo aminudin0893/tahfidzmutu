@@ -718,7 +718,7 @@ export default function App() {
           onClick={() => setMainTab('quran')}
           className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 ${mainTab === 'quran' ? 'bg-white text-blue-900 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
         >
-          <Book className="w-4 h-4" /> Al-Quran AI
+          <Book className="w-4 h-4" /> Al-Qur'an
         </button>
       </div>
 
