@@ -481,24 +481,32 @@ export default function App() {
     // 1. Dasar: Hapus harakat/diakritik & spasi berlebih
     let normalized = text.trim().replace(/\s{2,}/g, ' ');
     // Regex lebih lengkap untuk semua tanda baca/diakritik Arab (Harakat, Tajweed marks, dll)
+    // Termasuk tanda waqf dan karakter dekoratif lainnya
     normalized = normalized.replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g, '');
     
     // 2. Hapus tanda baca, angka, & karakter non-huruf Arab & Tatweel
-    normalized = normalized.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()؟ـ﴿﴾\d\u0660-\u0669]/g, "");
+    normalized = normalized.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()؟ـ﴿﴾\d\u0660-\u0669\u0640]/g, "");
     
     // 3. Normalisasi Karakter (Alif, Ya, Ta Marbuta, Waw, Hamza)
-    normalized = normalized.replace(/[أإآ]/g, 'ا');
+    // Membuat perbandingan lebih "fuzzy" terhadap variasi penulisan hamzah dan alif
+    normalized = normalized.replace(/[أإآءؤئ]/g, 'ا');
     normalized = normalized.replace(/[يى]/g, 'ي');
     normalized = normalized.replace(/ة/g, 'ه');
-    normalized = normalized.replace(/ؤ/g, 'و');
-    normalized = normalized.replace(/ئ/g, 'ي');
     
-    // 4. Menghapus Basmalah di awal ayat jika ada (lebih agresif)
-    // Kita tidak menghapus "الم" karena itu adalah bagian dari ayat
+    // 4. Normalisasi Fonetik Tambahan (untuk STT yang kurang akurat)
+    // Mengelompokkan karakter yang bunyinya mirip agar perbandingan lebih toleran
+    normalized = normalized.replace(/[ثسص]/g, 'س');
+    normalized = normalized.replace(/[حخ]/g, 'ح');
+    normalized = normalized.replace(/[ذزظض]/g, 'ز');
+    normalized = normalized.replace(/[طت]/g, 'ت');
+    normalized = normalized.replace(/[قع]/g, 'ق');
+    
+    // 5. Menghapus Basmalah di awal ayat jika ada (lebih agresif)
     const basmalahPatterns = [
       /^بِسْمِ\s+اللَّهِ\s+الرَّحْمَٰنِ\s+الرَّحِيمِ\s*/,
-      /^بسم\s+الله\s+الرحمن\s+الرحيم\s*/,
+      /^بسم\s+الله\s+الرحمن\s+الرحim\s*/,
       /^بسم\s+الله\s*/,
+      /^الحمد\s+لله\s*/, // Kadang STT menangkap ini jika suara kurang jelas
     ];
     basmalahPatterns.forEach(pattern => {
       normalized = normalized.replace(pattern, '');
@@ -750,20 +758,53 @@ export default function App() {
     // Gunakan Gemini AI untuk verifikasi cepat benar/salah bacaan
     setIsVerifyingAI(true);
     try {
+      // Logika Fuzzy Match Cepat sebelum AI
+      const normalizedVoice = normalizeArabic(voiceTexts[0]);
+      const tightVoice = normalizedVoice.replace(/\s/g, '');
+      const tightCorrect = normalizeArabic(targetAyah.text).replace(/\s/g, '');
+      
+      const levSimilarity = getSimilarityScore(tightVoice, tightCorrect);
+      
+      if (levSimilarity > 0.88) {
+        playDing();
+        setQuranFeedback({status: 'correct', text: voiceTexts[0], aiFeedback: "Bacaan anda bagus (Fuzzy Match)"});
+        setCorrectingIdx(currentIdx);
+        
+        setSelectedAyahIdx(prev => {
+          const nextIdx = prev + 1;
+          if (nextIdx < quranAyahs.length) {
+            const nextAyah = quranAyahs[nextIdx];
+            const currentPage = quranPages[selectedPageIdx];
+            const isNextOnDifferentPage = !currentPage.some(a => a.number === nextAyah.number);
+            if (isNextOnDifferentPage) setSelectedPageIdx(p => p + 1);
+            return nextIdx;
+          }
+          return prev;
+        });
+
+        setTimeout(() => {
+          setCorrectingIdx(null);
+          setQuranFeedback({status: 'idle', text: ''});
+        }, 2000);
+        setIsVerifyingAI(false);
+        return;
+      }
+
       const ai = new GoogleGenAI({ apiKey: customApiKey || process.env.GEMINI_API_KEY });
       
       // Add timeout to AI call to prevent infinite loading
       const aiPromise = ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `
-          Verifikasi kebenaran bacaan Al-Quran.
+          Tugas: Verifikasi kebenaran bacaan Al-Quran dari transkripsi suara (STT).
           Ayat Target: "${targetAyah.text}"
-          User Input: "${voiceTexts[0]}"
+          User Input (STT): "${voiceTexts[0]}"
           
-          INSTRUKSI:
-          1. Bandingkan input user dengan ayat target.
-          2. isCorrect: true jika bacaan benar secara kata, false jika salah.
-          3. feedback: Jika benar "Bacaan anda bagus", jika salah sebutkan kata yang salah.
+          PENTING:
+          1. Transkripsi suara (STT) seringkali tidak sempurna (misal: "al" hilang, hamzah tertulis berbeda, atau spasi salah).
+          2. Fokus pada AKAR KATA dan bunyi fonetik. Jika secara substansi user mengucapkan kata yang benar namun transkripsinya sedikit meleset, anggap BENAR.
+          3. isCorrect: true jika bacaan secara substansi benar (toleransi 15% kesalahan transkripsi).
+          4. feedback: Jika benar "Bacaan anda bagus", jika salah sebutkan kata mana yang salah diucapkan.
           
           Berikan jawaban JSON:
           {"isCorrect": boolean, "feedback": "string"}
