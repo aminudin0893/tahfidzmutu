@@ -116,7 +116,7 @@ export default function App() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
-      rec.continuous = true;
+      rec.continuous = false;
       rec.interimResults = true;
       rec.maxAlternatives = 3;
       rec.lang = 'ar-SA';
@@ -143,10 +143,8 @@ export default function App() {
       
       rec.onerror = (event: any) => {
         console.error("Speech recognition error", event.error);
-        if (event.error !== 'no-speech') {
-          setIsListening(false);
-          isListeningRef.current = false;
-        }
+        setIsListening(false);
+        isListeningRef.current = false;
         
         if (event.error === 'network') {
           setVoiceError("Koneksi internet bermasalah atau layanan suara tidak tersedia. Pastikan internet stabil.");
@@ -158,18 +156,8 @@ export default function App() {
       };
       
       rec.onend = () => {
-        if (isListeningRef.current) {
-          // Jika masih dalam status listening tapi berhenti sendiri (silence timeout), restart
-          try {
-            rec.start();
-          } catch (e) {
-            console.error("Auto-restart error", e);
-            setIsListening(false);
-            isListeningRef.current = false;
-          }
-        } else {
-          setIsListening(false);
-        }
+        setIsListening(false);
+        isListeningRef.current = false;
       };
       
       setRecognition(rec);
@@ -526,15 +514,23 @@ export default function App() {
       }
     }
 
-    // Jika logika cepat gagal, gunakan Gemini AI (Logika Super Canggih)
+    // Jika logika cepat gagal, gunakan Gemini AI (Logika Super Canggih Pro)
     setIsVerifyingAI(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `
-          Sebagai ahli Al-Quran profesional, verifikasi apakah bacaan pengguna (berdasarkan transkrip STT) sudah benar sesuai dengan ayat target.
-          Abaikan kesalahan kecil dari mesin Speech-to-Text (STT) atau variasi fonetik yang wajar.
+          Sebagai ahli Al-Quran profesional dan pakar fonetik Arab, tugas Anda adalah memverifikasi apakah bacaan pengguna sudah benar sesuai dengan ayat target.
+          
+          PANDUAN VERIFIKASI PRO:
+          1. Abaikan kesalahan teknis dari mesin Speech-to-Text (STT) seperti:
+             - Salah penulisan harakat (fathah/kasrah/dammah) yang sering terjadi di STT.
+             - Variasi penulisan huruf yang mirip (misal: alif mamdudah vs alif maqsurah).
+             - Kesalahan pemisahan kata yang tidak disengaja oleh mesin.
+          2. Fokus pada substansi kata dan urutan ayat.
+          3. Jika transkrip STT mengandung setidaknya 70% kemiripan fonetik dengan ayat target, anggap BENAR.
+          4. Pertimbangkan variasi dialek atau kecepatan bacaan yang mungkin mempengaruhi hasil STT.
           
           Ayat Target: "${currentQ.answerText}"
           Transkrip Suara (STT): "${voiceTexts.join(' | ')}"
@@ -542,7 +538,7 @@ export default function App() {
           Berikan jawaban dalam format JSON:
           {
             "isCorrect": boolean,
-            "feedback": string
+            "feedback": string (Berikan penjelasan singkat dan motivasi)
           }
         `,
         config: {
@@ -618,15 +614,23 @@ export default function App() {
       }
     }
 
-    // Jika logika cepat gagal, gunakan "Super Advanced" Gemini AI untuk verifikasi profesional
+    // Jika logika cepat gagal, gunakan "Super Advanced Pro" Gemini AI untuk verifikasi profesional
     setIsVerifyingAI(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `
-          Sebagai ahli Al-Quran profesional, verifikasi apakah bacaan pengguna (berdasarkan transkrip STT) sudah benar sesuai dengan ayat target.
-          Abaikan kesalahan kecil dari mesin Speech-to-Text (STT) atau variasi fonetik yang wajar.
+          Sebagai ahli Al-Quran profesional dan pakar fonetik Arab, tugas Anda adalah memverifikasi apakah bacaan pengguna sudah benar sesuai dengan ayat target.
+          
+          PANDUAN VERIFIKASI PRO:
+          1. Abaikan kesalahan teknis dari mesin Speech-to-Text (STT) seperti:
+             - Salah penulisan harakat atau tanda baca.
+             - Variasi penulisan huruf yang mirip secara fonetik.
+             - Kesalahan segmentasi kata oleh mesin STT.
+          2. Fokus pada kebenaran lafadz dan urutan kata.
+          3. Jika transkrip STT memiliki kemiripan fonetik yang kuat (minimal 70%) dengan ayat target, nyatakan BENAR.
+          4. Berikan toleransi tinggi terhadap keterbatasan teknologi STT dalam menangkap makhraj yang sempurna.
           
           Ayat Target: "${targetAyah.text}"
           Transkrip Suara (STT): "${voiceTexts.join(' | ')}"
@@ -634,7 +638,7 @@ export default function App() {
           Berikan jawaban dalam format JSON:
           {
             "isCorrect": boolean,
-            "feedback": string (penjelasan singkat jika salah, atau pujian jika benar)
+            "feedback": string (Penjelasan singkat yang membangun)
           }
         `,
         config: {
