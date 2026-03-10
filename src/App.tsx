@@ -148,7 +148,7 @@ export default function App() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
-      rec.continuous = true; // Changed to true for continuous reading
+      rec.continuous = false; // Changed to false as per user request for manual control
       rec.interimResults = true;
       rec.maxAlternatives = 3;
       rec.lang = 'ar-SA';
@@ -186,8 +186,8 @@ export default function App() {
           const finalStr = fullTranscript.trim();
           setTranscript(finalStr);
           setTranscripts([finalStr]);
-          // In continuous mode, we don't necessarily stop, 
-          // but we trigger analysis for the current segment
+          // Stop recognition after final result for manual control
+          rec.stop();
         }
       };
       
@@ -337,8 +337,9 @@ export default function App() {
 
   useEffect(() => {
     if (mainTab === 'quran' && transcripts.length > 0 && !isVerifyingAI && isVoiceAnalysisEnabled) {
-      checkQuranReading(transcripts);
-      setTranscripts([]); // Clear after processing
+      const currentTranscripts = [...transcripts];
+      setTranscripts([]); // Clear immediately
+      checkQuranReading(currentTranscripts);
     }
   }, [transcripts, mainTab, isVerifyingAI, isVoiceAnalysisEnabled]);
 
@@ -588,7 +589,7 @@ export default function App() {
   };
 
   const checkVoiceAnswerMulti = async (voiceTexts: string[]) => {
-    if (feedback) return;
+    if (feedback || isVerifyingAI) return;
     const currentQ = questions[currentIndex];
     const normalizedCorrect = normalizeArabic(currentQ.answerText);
     const tightCorrect = normalizedCorrect.replace(/\s/g, '');
@@ -737,9 +738,10 @@ export default function App() {
   };
 
   const checkQuranReading = async (voiceTexts: string[]) => {
+    if (isVerifyingAI) return;
     const currentIdx = selectedAyahIdx;
     const targetAyah = quranAyahs[currentIdx];
-    if (!targetAyah) return;
+    if (!targetAyah || !voiceTexts.length) return;
 
     const normalizedCorrect = normalizeArabic(targetAyah.text);
     const tightCorrect = normalizedCorrect.replace(/\s/g, '');
@@ -754,18 +756,17 @@ export default function App() {
       const aiPromise = ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `
-          Verifikasi kebenaran bacaan Al-Quran (Benar/Salah saja).
+          Verifikasi kebenaran bacaan Al-Quran.
           Ayat Target: "${targetAyah.text}"
-          User Input: "${voiceTexts.join(' | ')}"
+          User Input: "${voiceTexts[0]}"
           
           INSTRUKSI:
-          1. Bandingkan input user dengan ayat target secara fonetik.
-          2. isCorrect: true jika kemiripan > 85%.
-          3. feedback: Jika benar, berikan pesan "Bacaan anda bagus"
-          4. feedback: Jika salah, sebutkan bagian mana yang kurang tepat secara singkat.
+          1. Bandingkan input user dengan ayat target.
+          2. isCorrect: true jika bacaan benar secara kata, false jika salah.
+          3. feedback: Jika benar "Bacaan anda bagus", jika salah sebutkan kata yang salah.
           
           Berikan jawaban JSON:
-          {"isCorrect": boolean, "feedback": "Pesan singkat"}
+          {"isCorrect": boolean, "feedback": "string"}
         `,
         config: {
           responseMimeType: "application/json",
@@ -803,7 +804,7 @@ export default function App() {
         setQuranFeedback({status: 'correct', text: voiceTexts[0], aiFeedback: result.feedback});
         setCorrectingIdx(currentIdx);
         
-        // Move to next ayah immediately so next voice input targets next ayah
+        // Move to next ayah
         setSelectedAyahIdx(prev => {
           const nextIdx = prev + 1;
           if (nextIdx < quranAyahs.length) {
@@ -824,11 +825,15 @@ export default function App() {
       } else {
         playBuzzer();
         setQuranFeedback({status: 'incorrect', text: voiceTexts[0], aiFeedback: result.feedback});
-        if (recognitionRef.current) recognitionRef.current.stop();
         if (targetAyah.audio) {
           const audio = new Audio(targetAyah.audio);
           audio.play();
         }
+      }
+      
+      // Always ensure recognition is stopped after processing
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
       }
     } catch (error) {
       console.error("AI Verification error", error);
@@ -856,11 +861,15 @@ export default function App() {
       } else {
         playBuzzer();
         setQuranFeedback({status: 'incorrect', text: voiceTexts[0], aiFeedback: "Gagal melakukan analisis AI."});
-        if (recognitionRef.current) recognitionRef.current.stop();
         if (targetAyah.audio) {
           const audio = new Audio(targetAyah.audio);
           audio.play();
         }
+      }
+      
+      // Always ensure recognition is stopped after processing
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
       }
     } finally {
       setIsVerifyingAI(false);
