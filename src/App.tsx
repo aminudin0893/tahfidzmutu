@@ -495,26 +495,24 @@ export default function App() {
     
     // 4. Normalisasi Fonetik Tambahan (untuk STT yang kurang akurat)
     // Mengelompokkan karakter yang bunyinya mirip agar perbandingan lebih toleran
-    normalized = normalized.replace(/[ثسص]/g, 'س');
+    normalized = normalized.replace(/[ثسصش]/g, 'س');
     normalized = normalized.replace(/[حخ]/g, 'ح');
-    normalized = normalized.replace(/[ذزظض]/g, 'ز');
+    normalized = normalized.replace(/[ذزظضج]/g, 'ز');
     normalized = normalized.replace(/[طت]/g, 'ت');
-    normalized = normalized.replace(/[قع]/g, 'ق');
+    normalized = normalized.replace(/[قعك]/g, 'ق');
+    normalized = normalized.replace(/[هح]/g, 'ه');
     
     // 5. Menghapus Basmalah di awal ayat jika ada (lebih agresif)
+    // Karena diakritik sudah dihapus di langkah 1, pola harus tanpa harakat
     const basmalahPatterns = [
-      /^بِسْمِ\s+اللَّهِ\s+الرَّحْمَٰنِ\s+الرَّحِيمِ\s*/,
-      /^بسم\s+الله\s+الرحمن\s+الرحim\s*/,
+      /^بسم\s+الله\s+الرحمن\s+الرحيم\s*/,
+      /^بسم\s+الله\s+الرحمن\s+الرحيم\s*/,
       /^بسم\s+الله\s*/,
-      /^الحمد\s+لله\s*/, // Kadang STT menangkap ini jika suara kurang jelas
+      /^الحمد\s+لله\s*/, 
     ];
     basmalahPatterns.forEach(pattern => {
       normalized = normalized.replace(pattern, '');
     });
-    
-    // 5. Normalisasi Fonetik Sederhana (untuk membantu STT)
-    normalized = normalized.replace(/ة/g, 'ه');
-    normalized = normalized.replace(/ى/g, 'ي');
     
     return normalized.trim();
   };
@@ -765,7 +763,7 @@ export default function App() {
       
       const levSimilarity = getSimilarityScore(tightVoice, tightCorrect);
       
-      if (levSimilarity > 0.88) {
+      if (levSimilarity > 0.85) {
         playDing();
         setQuranFeedback({status: 'correct', text: voiceTexts[0], aiFeedback: "Bacaan anda bagus (Fuzzy Match)"});
         setCorrectingIdx(currentIdx);
@@ -1280,7 +1278,7 @@ export default function App() {
                         onMouseLeave={handleAyahPressEnd}
                         onTouchStart={() => handleAyahPressStart(ayah)}
                         onTouchEnd={handleAyahPressEnd}
-                        className={`cursor-pointer transition-all duration-500 rounded-xl px-2 py-1 relative group/ayah ${
+                        className={`cursor-pointer transition-all duration-500 rounded-xl px-2 py-1 relative group/ayah flex items-center gap-2 ${
                           correctingIdx === globalIdx
                             ? 'bg-emerald-100 text-emerald-800 ring-4 ring-emerald-200 shadow-sm z-10' 
                             : selectedAyahIdx === globalIdx
@@ -1290,6 +1288,21 @@ export default function App() {
                               : 'hover:bg-slate-50 opacity-80'
                         }`}
                       >
+                        {/* Tombol Rekam Kecil (Hanya muncul jika terpilih) */}
+                        {isVoiceAnalysisEnabled && isSelected && (
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startListening();
+                            }}
+                            disabled={isVerifyingAI}
+                            className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-md transition-all ${isVerifyingAI ? 'bg-amber-500' : isListening ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500 hover:scale-110'} text-white z-30`}
+                            title="Rekam Bacaan"
+                          >
+                            {isVerifyingAI ? <RefreshCcw className="w-4 h-4 animate-spin" /> : isListening ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                          </button>
+                        )}
+
                         {/* Tombol Terjemah Kecil */}
                         <button 
                           onClick={(e) => {
@@ -1326,19 +1339,9 @@ export default function App() {
 
               <div className="flex flex-col items-center gap-5 py-2">
                 {isVoiceAnalysisEnabled ? (
-                  <div className="relative">
-                    {isListening && (
-                      <div className="absolute inset-0 -m-4 flex items-center justify-center">
-                        <div className="w-full h-full rounded-full border-4 border-blue-500/30 animate-ping"></div>
-                      </div>
-                    )}
-                    <button 
-                      onClick={startListening}
-                      disabled={isVerifyingAI}
-                      className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl border-b-8 active:border-b-0 active:translate-y-2 relative z-10 transition-all ${isVerifyingAI ? 'bg-amber-500 border-amber-700' : isListening ? 'bg-rose-500 border-rose-700' : 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 hover:scale-105'} text-white`}
-                    >
-                      {isVerifyingAI ? <RefreshCcw className="w-9 h-9 animate-spin" /> : isListening ? <Square className="w-9 h-9" /> : <Mic className="w-9 h-9" />}
-                    </button>
+                  <div className="text-center py-4 px-6 bg-blue-50/50 rounded-2xl border border-dashed border-blue-200">
+                    <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Mode Koreksi AI Aktif</p>
+                    <p className="text-[10px] text-blue-600 font-bold">Ketuk ayat lalu tekan tombol mikrofon kecil untuk merekam</p>
                   </div>
                 ) : (
                   <div className="text-center py-4 px-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
@@ -1349,19 +1352,10 @@ export default function App() {
                 {isVoiceAnalysisEnabled && (
                   <>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">
-                      {isVerifyingAI ? "AI Sedang Memverifikasi..." : isListening ? "Membaca... Ketuk untuk Berhenti" : "Ketuk Mikrofon & Mulai Membaca"}
+                      {isVerifyingAI ? "AI Sedang Memverifikasi..." : isListening ? "Membaca... Ketuk Tombol Merah untuk Berhenti" : ""}
                     </p>
-
-                    {isVerifyingAI && (
-                      <div className="flex items-center gap-2 bg-amber-50 px-4 py-2 rounded-full border border-amber-100 animate-pulse">
-                        <RefreshCcw className="w-3 h-3 animate-spin text-amber-600" />
-                        <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Koreksi AI Berjalan...</span>
-                      </div>
-                    )}
                   </>
                 )}
-
-                {/* Transcript hidden as per user request */}
               </div>
 
               {quranFeedback.status !== 'idle' && (
